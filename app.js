@@ -1,8 +1,12 @@
 /**
- * App controller – wires the simulation to the canvas and admin panel.
+ * App controller – wires the simulation to the canvas, admin panel, and 3D view.
  */
 
 (function () {
+  // ── Fixed grid: 20 columns × 10 rows (1 ft² panels) ────
+  const GRID_COLS = 20;
+  const GRID_ROWS = 10;
+
   // ── Elements ──────────────────────────────────────────────
   const canvas = document.getElementById('simulation-canvas');
   const ctx = canvas.getContext('2d');
@@ -17,7 +21,6 @@
   const sliderMaxIntensity = document.getElementById('max-intensity');
   const sliderWaterStrength = document.getElementById('water-strength');
   const sliderWaterRadius = document.getElementById('water-radius');
-  const selectResolution = document.getElementById('grid-resolution');
   const checkboxGrid = document.getElementById('show-grid');
 
   const valSpread = document.getElementById('spread-speed-val');
@@ -33,32 +36,55 @@
   // ── State ─────────────────────────────────────────────────
   let mode = 'fire';       // 'fire' | 'water'
   let paused = false;
-  let showGrid = false;
+  let showGrid = true;     // default on for panel grid
   let mouseDown = false;
   let mouseX = -1;
   let mouseY = -1;
+  let activeView = '2d';
 
-  // Determine grid dimensions from select (4:3 aspect)
-  function getGridDims() {
-    const cols = parseInt(selectResolution.value);
-    const rows = Math.round(cols * 0.75);
-    return { cols, rows };
-  }
+  // ── Simulation ────────────────────────────────────────────
+  const sim = new FireSimulation(GRID_COLS, GRID_ROWS);
 
-  const { cols, rows } = getGridDims();
-  const sim = new FireSimulation(cols, rows);
+  // Expose simulation globally so room3d.js can read it
+  window.fireSim = sim;
+
+  // ── View tab switching ────────────────────────────────────
+  const viewTabs = document.querySelectorAll('.view-tab');
+  const viewPanels = document.querySelectorAll('.view-panel');
+
+  viewTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const viewId = tab.dataset.view;
+      activeView = viewId;
+
+      viewTabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+
+      viewPanels.forEach(p => p.classList.remove('active'));
+      document.getElementById('view-' + viewId).classList.add('active');
+
+      if (viewId === '2d') {
+        resizeCanvas();
+      } else if (viewId === '3d' && window.room3d) {
+        window.room3d.onResize();
+      }
+    });
+  });
 
   // ── Canvas sizing ─────────────────────────────────────────
   function resizeCanvas() {
-    const container = canvas.parentElement;
-    const rect = container.getBoundingClientRect();
-    // Subtract the admin panel width
-    const panelWidth = document.getElementById('admin-panel').offsetWidth;
-    canvas.width = rect.width - panelWidth;
-    canvas.height = rect.height;
+    const panel = document.getElementById('view-2d');
+    canvas.width = panel.clientWidth;
+    canvas.height = panel.clientHeight;
   }
 
-  window.addEventListener('resize', resizeCanvas);
+  window.addEventListener('resize', () => {
+    if (activeView === '2d') {
+      resizeCanvas();
+    } else if (window.room3d) {
+      window.room3d.onResize();
+    }
+  });
   resizeCanvas();
 
   // ── Coordinate mapping ────────────────────────────────────
@@ -74,59 +100,35 @@
     };
   }
 
-  // ── Rendering ─────────────────────────────────────────────
-  // Pre-build a colour LUT for heat values 0–255
-  const fireLUT = new Array(256);
-  for (let i = 0; i < 256; i++) {
-    const t = i / 255;
-    // black → red → orange → yellow → white
-    let r, g, b;
-    if (t < 0.33) {
-      const s = t / 0.33;
-      r = Math.round(s * 200);
-      g = 0;
-      b = 0;
-    } else if (t < 0.66) {
-      const s = (t - 0.33) / 0.33;
-      r = 200 + Math.round(s * 55);
-      g = Math.round(s * 160);
-      b = 0;
-    } else {
-      const s = (t - 0.66) / 0.34;
-      r = 255;
-      g = 160 + Math.round(s * 95);
-      b = Math.round(s * 200);
-    }
-    fireLUT[i] = `rgb(${r},${g},${b})`;
-  }
+  // ── 2D Rendering ──────────────────────────────────────────
+  function render2D() {
+    if (activeView !== '2d') return;
 
-  function render() {
     const w = canvas.width;
     const h = canvas.height;
     const cellW = w / sim.cols;
     const cellH = h / sim.rows;
 
-    // Use ImageData for performance at high resolutions
-    const imgData = ctx.createImageData(w, h);
-    const data = imgData.data;
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, w, h);
 
+    // Draw each panel as a distinct rectangle
     for (let gy = 0; gy < sim.rows; gy++) {
       for (let gx = 0; gx < sim.cols; gx++) {
         const heat = sim.heat[sim.idx(gx, gy)];
 
-        // Compute pixel colour
-        let r = 10, g = 10, b = 15; // dark ceiling background
+        let r = 20, g = 20, b = 28;
         if (heat > 0) {
           const t = Math.min(heat, 1);
           if (t < 0.33) {
             const s = t / 0.33;
-            r = Math.round(s * 200);
-            g = 0;
+            r = Math.round(30 + s * 170);
+            g = Math.round(s * 20);
             b = 0;
           } else if (t < 0.66) {
             const s = (t - 0.33) / 0.33;
             r = 200 + Math.round(s * 55);
-            g = Math.round(s * 160);
+            g = 20 + Math.round(s * 140);
             b = 0;
           } else {
             const s = (t - 0.66) / 0.34;
@@ -134,54 +136,59 @@
             g = 160 + Math.round(s * 95);
             b = Math.round(s * 200);
           }
-          // Add flicker
+          // Flicker
           const flicker = 0.9 + Math.random() * 0.1;
           r = Math.min(255, Math.round(r * flicker));
           g = Math.min(255, Math.round(g * flicker));
           b = Math.min(255, Math.round(b * flicker));
         }
 
-        // Fill cell pixels
         const px0 = Math.floor(gx * cellW);
         const py0 = Math.floor(gy * cellH);
-        const px1 = Math.floor((gx + 1) * cellW);
-        const py1 = Math.floor((gy + 1) * cellH);
+        const pw = Math.floor((gx + 1) * cellW) - px0;
+        const ph = Math.floor((gy + 1) * cellH) - py0;
 
-        for (let py = py0; py < py1; py++) {
-          for (let px = px0; px < px1; px++) {
-            const off = (py * w + px) * 4;
-            data[off] = r;
-            data[off + 1] = g;
-            data[off + 2] = b;
-            data[off + 3] = 255;
-          }
-        }
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(px0, py0, pw, ph);
       }
     }
 
-    ctx.putImageData(imgData, 0, 0);
-
-    // Optional grid overlay
-    if (showGrid && cellW > 3) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-      ctx.lineWidth = 0.5;
+    // Grid lines (panel borders)
+    if (showGrid) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
       for (let x = 0; x <= sim.cols; x++) {
         const px = Math.floor(x * cellW);
         ctx.beginPath();
-        ctx.moveTo(px, 0);
-        ctx.lineTo(px, h);
+        ctx.moveTo(px + 0.5, 0);
+        ctx.lineTo(px + 0.5, h);
         ctx.stroke();
       }
       for (let y = 0; y <= sim.rows; y++) {
         const py = Math.floor(y * cellH);
         ctx.beginPath();
-        ctx.moveTo(0, py);
-        ctx.lineTo(w, py);
+        ctx.moveTo(0, py + 0.5);
+        ctx.lineTo(w, py + 0.5);
         ctx.stroke();
       }
     }
 
-    // Water cursor indicator
+    // Panel labels (column/row)
+    if (cellW > 30) {
+      ctx.font = '10px monospace';
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (let gy = 0; gy < sim.rows; gy++) {
+        for (let gx = 0; gx < sim.cols; gx++) {
+          const cx = (gx + 0.5) * cellW;
+          const cy = (gy + 0.5) * cellH;
+          ctx.fillText(`${gx},${gy}`, cx, cy);
+        }
+      }
+    }
+
+    // Water cursor
     if (mode === 'water' && mouseX >= 0 && mouseY >= 0) {
       const rect = canvas.getBoundingClientRect();
       const px = mouseX - rect.left;
@@ -193,7 +200,6 @@
       ctx.arc(px, py, radiusPx, 0, Math.PI * 2);
       ctx.stroke();
 
-      // Spray particles when spraying
       if (mouseDown) {
         ctx.fillStyle = 'rgba(100, 180, 255, 0.3)';
         for (let i = 0; i < 8; i++) {
@@ -209,30 +215,39 @@
 
   // ── Main loop ─────────────────────────────────────────────
   let lastTime = performance.now();
-  const FIXED_DT = 1 / 30; // simulation timestep
+  const FIXED_DT = 1 / 30;
 
   function loop(now) {
     const elapsed = (now - lastTime) / 1000;
     lastTime = now;
 
     if (!paused) {
-      // Apply water while mouse is held
-      if (mouseDown && mode === 'water') {
+      // Apply water while mouse is held (2D view)
+      if (mouseDown && mode === 'water' && activeView === '2d') {
         const grid = canvasToGrid(mouseX, mouseY);
         sim.applyWater(grid.x, grid.y, FIXED_DT);
       }
 
-      sim.step(Math.min(elapsed, 0.05)); // cap dt to avoid spiral of death
+      sim.step(Math.min(elapsed, 0.05));
     }
 
-    render();
+    render2D();
+
+    // Update 3D view (runs even when not visible to keep panels synced)
+    if (window.room3d) {
+      window.room3d.updatePanels();
+      if (activeView === '3d') {
+        window.room3d.render();
+      }
+    }
+
     updateStats();
     requestAnimationFrame(loop);
   }
 
   requestAnimationFrame(loop);
 
-  // ── Input handling ────────────────────────────────────────
+  // ── Input handling (2D canvas) ────────────────────────────
   canvas.addEventListener('mousedown', (e) => {
     mouseDown = true;
     mouseX = e.clientX;
@@ -240,7 +255,7 @@
 
     if (mode === 'fire') {
       const grid = canvasToGrid(e.clientX, e.clientY);
-      sim.ignite(grid.x, grid.y, 3);
+      sim.ignite(grid.x, grid.y, 2);
     }
   });
 
@@ -248,10 +263,9 @@
     mouseX = e.clientX;
     mouseY = e.clientY;
 
-    // Allow continuous fire placement while dragging in fire mode
     if (mouseDown && mode === 'fire') {
       const grid = canvasToGrid(e.clientX, e.clientY);
-      sim.ignite(grid.x, grid.y, 2);
+      sim.ignite(grid.x, grid.y, 1);
     }
   });
 
@@ -271,7 +285,7 @@
     mouseY = touch.clientY;
     if (mode === 'fire') {
       const grid = canvasToGrid(touch.clientX, touch.clientY);
-      sim.ignite(grid.x, grid.y, 3);
+      sim.ignite(grid.x, grid.y, 2);
     }
   });
 
@@ -282,7 +296,7 @@
     mouseY = touch.clientY;
     if (mode === 'fire') {
       const grid = canvasToGrid(touch.clientX, touch.clientY);
-      sim.ignite(grid.x, grid.y, 2);
+      sim.ignite(grid.x, grid.y, 1);
     }
   });
 
@@ -328,11 +342,6 @@
   bindSlider(sliderMaxIntensity, valMaxIntensity, 'maxIntensity', v => v.toFixed(2));
   bindSlider(sliderWaterStrength, valWaterStrength, 'waterStrength', v => v.toFixed(1));
   bindSlider(sliderWaterRadius, valWaterRadius, 'waterRadius');
-
-  selectResolution.addEventListener('change', () => {
-    const { cols, rows } = getGridDims();
-    sim.resize(cols, rows);
-  });
 
   checkboxGrid.addEventListener('change', () => {
     showGrid = checkboxGrid.checked;

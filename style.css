@@ -41,6 +41,52 @@ header h1 {
   overflow: hidden;
 }
 
+/* ── View area with tabs ───────────────────────────────── */
+#view-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#view-tabs {
+  display: flex;
+  background: #16213e;
+  border-bottom: 1px solid #0f3460;
+  flex-shrink: 0;
+}
+
+.view-tab {
+  padding: 8px 20px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #888;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.view-tab:hover {
+  color: #e0e0e0;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.view-tab.active {
+  color: #ff6b35;
+  border-bottom-color: #ff6b35;
+}
+
+.view-panel {
+  display: none;
+  flex: 1;
+  overflow: hidden;
+}
+
+.view-panel.active {
+  display: flex;
+}
+
 #simulation-canvas {
   flex: 1;
   display: block;
@@ -48,7 +94,20 @@ header h1 {
   cursor: crosshair;
 }
 
-/* Admin Panel */
+#room3d-container {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  background: #0a0a14;
+}
+
+#room3d-container canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ── Admin Panel ───────────────────────────────────────── */
 #admin-panel {
   width: 260px;
   background: #16213e;

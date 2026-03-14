@@ -10,11 +10,22 @@
   <div id="app">
     <header>
       <h1>Ceiling Fire Simulation</h1>
-      <p class="subtitle">Click the ceiling to start fires. Click &amp; drag to spray water.</p>
+      <p class="subtitle">Click the ceiling to start fires. Click &amp; drag to spray water. 20&times;10 panel grid (1 ft&sup2; panels).</p>
     </header>
 
     <div id="main-container">
-      <canvas id="simulation-canvas"></canvas>
+      <div id="view-area">
+        <div id="view-tabs">
+          <button class="view-tab active" data-view="2d">2D Control View</button>
+          <button class="view-tab" data-view="3d">3D Room View</button>
+        </div>
+        <div id="view-2d" class="view-panel active">
+          <canvas id="simulation-canvas"></canvas>
+        </div>
+        <div id="view-3d" class="view-panel">
+          <div id="room3d-container"></div>
+        </div>
+      </div>
 
       <aside id="admin-panel">
         <h2>Controls</h2>
@@ -62,16 +73,8 @@
 
         <div class="control-group">
           <h3>Display</h3>
-          <label>
-            Grid Resolution
-            <select id="grid-resolution">
-              <option value="80">Low (80×60)</option>
-              <option value="120" selected>Medium (120×90)</option>
-              <option value="200">High (200×150)</option>
-            </select>
-          </label>
           <label class="checkbox-label">
-            <input type="checkbox" id="show-grid"> Show grid lines
+            <input type="checkbox" id="show-grid" checked> Show grid lines
           </label>
         </div>
 
@@ -93,7 +96,9 @@
     </div>
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="simulation.js"></script>
+  <script src="room3d.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
