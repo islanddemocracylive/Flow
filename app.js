@@ -347,11 +347,38 @@
     showGrid = checkboxGrid.checked;
   });
 
+  // ── Mobile panel toggle ─────────────────────────────────
+  const togglePanelBtn = document.getElementById('toggle-panel-btn');
+  const adminPanel = document.getElementById('admin-panel');
+  const mobileStats = document.getElementById('mobile-stats');
+  const mStatBurning = document.getElementById('m-stat-burning');
+  const mStatCoverage = document.getElementById('m-stat-coverage');
+  const mStatIntensity = document.getElementById('m-stat-intensity');
+
+  function checkMobile() {
+    const isMobile = window.innerWidth <= 700;
+    if (mobileStats) mobileStats.style.display = isMobile ? 'flex' : 'none';
+    if (!isMobile) adminPanel.classList.remove('open');
+  }
+  checkMobile();
+  window.addEventListener('resize', checkMobile);
+
+  togglePanelBtn.addEventListener('click', () => {
+    adminPanel.classList.toggle('open');
+    togglePanelBtn.textContent = adminPanel.classList.contains('open') ? '\u2715' : '\u2699';
+  });
+
   // ── Stats ─────────────────────────────────────────────────
   function updateStats() {
     const stats = sim.getStats();
     statBurning.textContent = stats.burning;
     statCoverage.textContent = (stats.coverage * 100).toFixed(1) + '%';
     statIntensity.textContent = stats.avgIntensity.toFixed(2);
+    // Mobile stats bar
+    if (mStatBurning) {
+      mStatBurning.textContent = stats.burning;
+      mStatCoverage.textContent = (stats.coverage * 100).toFixed(1) + '%';
+      mStatIntensity.textContent = stats.avgIntensity.toFixed(2);
+    }
   }
 })();

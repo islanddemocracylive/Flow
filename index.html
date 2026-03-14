@@ -13,6 +13,10 @@
       <p class="subtitle">Click the ceiling to start fires. Click &amp; drag to spray water. 20&times;10 panel grid (1 ft&sup2; panels).</p>
     </header>
 
+    <div id="mobile-stats" class="mobile-stats" style="display:none;">
+      Fire: <span id="m-stat-burning">0</span> | Coverage: <span id="m-stat-coverage">0%</span> | Intensity: <span id="m-stat-intensity">0.00</span>
+    </div>
+
     <div id="main-container">
       <div id="view-area">
         <div id="view-tabs">
@@ -95,6 +99,8 @@
       </aside>
     </div>
   </div>
+
+  <button id="toggle-panel-btn" aria-label="Toggle controls">&#9881;</button>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="simulation.js"></script>
