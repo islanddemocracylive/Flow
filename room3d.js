@@ -131,9 +131,8 @@
 
   for (let row = 0; row < ROOM_D; row++) {
     for (let col = 0; col < ROOM_W; col++) {
-      const mat = new THREE.MeshLambertMaterial({
+      const mat = new THREE.MeshBasicMaterial({
         color: 0x1a1a24,
-        emissive: 0x000000,
         side: THREE.DoubleSide,
       });
       const panel = new THREE.Mesh(panelGeo, mat);
@@ -176,7 +175,7 @@
   const baseColor = new THREE.Color(0x1a1a24);
 
   function heatToColor(heat) {
-    if (heat <= 0) return { color: baseColor.clone(), emissive: new THREE.Color(0x000000) };
+    if (heat <= 0) return baseColor.clone();
 
     const t = Math.min(heat, 1);
     let r, g, b;
@@ -203,11 +202,7 @@
     g = Math.min(1, g * flicker);
     b = Math.min(1, b * flicker);
 
-    const color = new THREE.Color(r, g, b);
-    // Emissive makes the panel glow
-    const emissive = new THREE.Color(r * 0.6, g * 0.4, b * 0.2);
-
-    return { color, emissive };
+    return new THREE.Color(r, g, b);
   }
 
   // ── Public API ────────────────────────────────────────────
@@ -222,10 +217,8 @@
       for (let i = 0; i < panelMeshes.length; i++) {
         const { mesh, col, row } = panelMeshes[i];
         const heat = sim.heat[sim.idx(col, row)];
-        const { color, emissive } = heatToColor(heat);
-
+        const color = heatToColor(heat);
         mesh.material.color.copy(color);
-        mesh.material.emissive.copy(emissive);
 
         totalGlow += heat;
       }
