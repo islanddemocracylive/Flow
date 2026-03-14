@@ -87,16 +87,27 @@
   });
   resizeCanvas();
 
+  // ── Square cell layout helper ─────────────────────────────
+  function getGridLayout() {
+    const w = canvas.width;
+    const h = canvas.height;
+    const cellSize = Math.min(w / sim.cols, h / sim.rows);
+    const gridW = cellSize * sim.cols;
+    const gridH = cellSize * sim.rows;
+    const offsetX = Math.floor((w - gridW) / 2);
+    const offsetY = Math.floor((h - gridH) / 2);
+    return { cellSize, offsetX, offsetY, gridW, gridH };
+  }
+
   // ── Coordinate mapping ────────────────────────────────────
   function canvasToGrid(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
-    const px = clientX - rect.left;
-    const py = clientY - rect.top;
-    const cellW = canvas.width / sim.cols;
-    const cellH = canvas.height / sim.rows;
+    const { cellSize, offsetX, offsetY } = getGridLayout();
+    const px = clientX - rect.left - offsetX;
+    const py = clientY - rect.top - offsetY;
     return {
-      x: Math.floor(px / cellW),
-      y: Math.floor(py / cellH),
+      x: Math.floor(px / cellSize),
+      y: Math.floor(py / cellSize),
     };
   }
 
@@ -106,13 +117,12 @@
 
     const w = canvas.width;
     const h = canvas.height;
-    const cellW = w / sim.cols;
-    const cellH = h / sim.rows;
+    const { cellSize, offsetX, offsetY, gridW, gridH } = getGridLayout();
 
     ctx.fillStyle = '#111';
     ctx.fillRect(0, 0, w, h);
 
-    // Draw each panel as a distinct rectangle
+    // Draw each panel as a square
     for (let gy = 0; gy < sim.rows; gy++) {
       for (let gx = 0; gx < sim.cols; gx++) {
         const heat = sim.heat[sim.idx(gx, gy)];
@@ -143,13 +153,12 @@
           b = Math.min(255, Math.round(b * flicker));
         }
 
-        const px0 = Math.floor(gx * cellW);
-        const py0 = Math.floor(gy * cellH);
-        const pw = Math.floor((gx + 1) * cellW) - px0;
-        const ph = Math.floor((gy + 1) * cellH) - py0;
+        const px0 = offsetX + Math.floor(gx * cellSize);
+        const py0 = offsetY + Math.floor(gy * cellSize);
+        const ps = Math.floor(cellSize);
 
         ctx.fillStyle = `rgb(${r},${g},${b})`;
-        ctx.fillRect(px0, py0, pw, ph);
+        ctx.fillRect(px0, py0, ps, ps);
       }
     }
 
@@ -158,31 +167,31 @@
       ctx.strokeStyle = 'rgba(255,255,255,0.15)';
       ctx.lineWidth = 1;
       for (let x = 0; x <= sim.cols; x++) {
-        const px = Math.floor(x * cellW);
+        const px = offsetX + Math.floor(x * cellSize);
         ctx.beginPath();
-        ctx.moveTo(px + 0.5, 0);
-        ctx.lineTo(px + 0.5, h);
+        ctx.moveTo(px + 0.5, offsetY);
+        ctx.lineTo(px + 0.5, offsetY + gridH);
         ctx.stroke();
       }
       for (let y = 0; y <= sim.rows; y++) {
-        const py = Math.floor(y * cellH);
+        const py = offsetY + Math.floor(y * cellSize);
         ctx.beginPath();
-        ctx.moveTo(0, py + 0.5);
-        ctx.lineTo(w, py + 0.5);
+        ctx.moveTo(offsetX, py + 0.5);
+        ctx.lineTo(offsetX + gridW, py + 0.5);
         ctx.stroke();
       }
     }
 
     // Panel labels (column/row)
-    if (cellW > 30) {
+    if (cellSize > 30) {
       ctx.font = '10px monospace';
       ctx.fillStyle = 'rgba(255,255,255,0.25)';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       for (let gy = 0; gy < sim.rows; gy++) {
         for (let gx = 0; gx < sim.cols; gx++) {
-          const cx = (gx + 0.5) * cellW;
-          const cy = (gy + 0.5) * cellH;
+          const cx = offsetX + (gx + 0.5) * cellSize;
+          const cy = offsetY + (gy + 0.5) * cellSize;
           ctx.fillText(`${gx},${gy}`, cx, cy);
         }
       }
@@ -193,7 +202,7 @@
       const rect = canvas.getBoundingClientRect();
       const px = mouseX - rect.left;
       const py = mouseY - rect.top;
-      const radiusPx = sim.waterRadius * cellW;
+      const radiusPx = sim.waterRadius * cellSize;
       ctx.strokeStyle = 'rgba(100, 180, 255, 0.6)';
       ctx.lineWidth = 2;
       ctx.beginPath();
