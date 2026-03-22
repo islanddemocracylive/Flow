@@ -1,5 +1,14 @@
 /**
  * App controller – wires the simulation to the canvas, admin panel, and 3D view.
+ *
+ * Input model:
+ *   Click / tap        → ignite fire at that cell
+ *   Click & drag       → spray water along the drag path
+ *   Right-click        → also ignite fire (context menu suppressed)
+ *
+ * Placement mode (toggled via admin panel):
+ *   When "Place Ceiling Vent" or "Place Door" is active, clicking the 2D grid
+ *   toggles a vent/door at that position instead of fire/water.
  */
 
 (function () {
@@ -11,8 +20,6 @@
   const canvas = document.getElementById('simulation-canvas');
   const ctx = canvas.getContext('2d');
 
-  const btnFireMode = document.getElementById('btn-fire-mode');
-  const btnWaterMode = document.getElementById('btn-water-mode');
   const btnPause = document.getElementById('btn-pause');
   const btnReset = document.getElementById('btn-reset');
 
@@ -21,6 +28,7 @@
   const sliderMaxIntensity = document.getElementById('max-intensity');
   const sliderWaterStrength = document.getElementById('water-strength');
   const sliderWaterRadius = document.getElementById('water-radius');
+  const sliderVentStrength = document.getElementById('vent-strength');
   const checkboxGrid = document.getElementById('show-grid');
 
   const valSpread = document.getElementById('spread-speed-val');
@@ -28,19 +36,33 @@
   const valMaxIntensity = document.getElementById('max-intensity-val');
   const valWaterStrength = document.getElementById('water-strength-val');
   const valWaterRadius = document.getElementById('water-radius-val');
+  const valVentStrength = document.getElementById('vent-strength-val');
 
   const statBurning = document.getElementById('stat-burning');
   const statCoverage = document.getElementById('stat-coverage');
   const statIntensity = document.getElementById('stat-intensity');
 
+  // Vent placement buttons
+  const btnPlaceVent = document.getElementById('btn-place-vent');
+  const btnPlaceDoorFar = document.getElementById('btn-place-door-far');
+  const btnPlaceDoorLeft = document.getElementById('btn-place-door-left');
+  const btnClearVents = document.getElementById('btn-clear-vents');
+
   // ── State ─────────────────────────────────────────────────
-  let mode = 'fire';       // 'fire' | 'water'
   let paused = false;
   let showGrid = true;     // default on for panel grid
   let mouseDown = false;
   let mouseX = -1;
   let mouseY = -1;
   let activeView = '2d';
+  let dragDistance = 0;     // track how far mouse has moved since mousedown
+  let mouseDownX = 0;
+  let mouseDownY = 0;
+
+  // Placement mode: null | 'ceiling-vent' | 'door-far' | 'door-left'
+  let placementMode = null;
+
+  const DRAG_THRESHOLD = 5; // pixels – movement beyond this = drag (water)
 
   // ── Simulation ────────────────────────────────────────────
   const sim = new FireSimulation(GRID_COLS, GRID_ROWS);
@@ -131,9 +153,18 @@
     for (let gy = 0; gy < sim.rows; gy++) {
       for (let gx = 0; gx < sim.cols; gx++) {
         const heat = sim.heat[sim.idx(gx, gy)];
+        const isVent = sim.isCeilingVent(gx, gy);
+        const isDoor = sim.vents.some(v => v.type === 'door' && v.x === gx && v.y === gy);
 
         let r = 20, g = 20, b = 28;
-        if (heat > 0) {
+
+        if (isVent) {
+          // Vent cell: dark with cyan border
+          r = 8; g = 12; b = 20;
+        } else if (isDoor) {
+          // Door indicator cell: brownish
+          r = 60; g = 45; b = 25;
+        } else if (heat > 0) {
           const t = Math.min(heat, 1);
           if (t < 0.33) {
             const s = t / 0.33;
@@ -164,6 +195,69 @@
 
         ctx.fillStyle = `rgb(${r},${g},${b})`;
         ctx.fillRect(px0, py0, ps, ps);
+
+        // Vent marker
+        if (isVent) {
+          ctx.strokeStyle = 'rgba(100, 200, 255, 0.8)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(px0 + 2, py0 + 2, ps - 4, ps - 4);
+          // Grate lines
+          ctx.strokeStyle = 'rgba(100, 200, 255, 0.4)';
+          ctx.lineWidth = 1;
+          for (let i = 1; i <= 3; i++) {
+            ctx.beginPath();
+            ctx.moveTo(px0 + 4, py0 + i * ps / 4);
+            ctx.lineTo(px0 + ps - 4, py0 + i * ps / 4);
+            ctx.stroke();
+          }
+        }
+
+        // Door marker
+        if (isDoor) {
+          ctx.strokeStyle = 'rgba(200, 160, 80, 0.8)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(px0 + 2, py0 + 2, ps - 4, ps - 4);
+          ctx.fillStyle = 'rgba(200, 160, 80, 0.3)';
+          ctx.fillRect(px0 + 3, py0 + 3, ps - 6, ps - 6);
+        }
+      }
+    }
+
+    // Airflow arrows on 2D view
+    if (sim.vents.length > 0) {
+      ctx.fillStyle = 'rgba(100, 180, 255, 0.4)';
+      ctx.strokeStyle = 'rgba(100, 180, 255, 0.5)';
+      ctx.lineWidth = 1.5;
+      for (let gy = 0; gy < sim.rows; gy += 2) {
+        for (let gx = 0; gx < sim.cols; gx += 2) {
+          const af = sim.getAirflow(gx, gy);
+          const mag = Math.sqrt(af.vx * af.vx + af.vy * af.vy);
+          if (mag < 0.03) continue;
+
+          const cx = offsetX + (gx + 1) * cellSize;
+          const cy = offsetY + (gy + 1) * cellSize;
+          const len = cellSize * 0.6 * Math.min(mag, 1);
+
+          // Arrow line
+          const angle = Math.atan2(af.vy, af.vx);
+          const ex = cx + Math.cos(angle) * len;
+          const ey = cy + Math.sin(angle) * len;
+
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(ex, ey);
+          ctx.stroke();
+
+          // Arrowhead
+          const headLen = 4;
+          const headAngle = 0.5;
+          ctx.beginPath();
+          ctx.moveTo(ex, ey);
+          ctx.lineTo(ex - headLen * Math.cos(angle - headAngle), ey - headLen * Math.sin(angle - headAngle));
+          ctx.lineTo(ex - headLen * Math.cos(angle + headAngle), ey - headLen * Math.sin(angle + headAngle));
+          ctx.closePath();
+          ctx.fill();
+        }
       }
     }
 
@@ -202,8 +296,8 @@
       }
     }
 
-    // Water cursor
-    if (mode === 'water' && mouseX >= 0 && mouseY >= 0) {
+    // Water cursor (shown when dragging / holding mouse)
+    if (mouseDown && dragDistance > DRAG_THRESHOLD && mouseX >= 0 && mouseY >= 0) {
       const rect = canvas.getBoundingClientRect();
       const px = mouseX - rect.left;
       const py = mouseY - rect.top;
@@ -214,16 +308,28 @@
       ctx.arc(px, py, radiusPx, 0, Math.PI * 2);
       ctx.stroke();
 
-      if (mouseDown) {
-        ctx.fillStyle = 'rgba(100, 180, 255, 0.3)';
-        for (let i = 0; i < 8; i++) {
-          const angle = Math.random() * Math.PI * 2;
-          const dist = Math.random() * radiusPx;
-          ctx.beginPath();
-          ctx.arc(px + Math.cos(angle) * dist, py + Math.sin(angle) * dist, 2, 0, Math.PI * 2);
-          ctx.fill();
-        }
+      ctx.fillStyle = 'rgba(100, 180, 255, 0.3)';
+      for (let i = 0; i < 8; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = Math.random() * radiusPx;
+        ctx.beginPath();
+        ctx.arc(px + Math.cos(angle) * dist, py + Math.sin(angle) * dist, 2, 0, Math.PI * 2);
+        ctx.fill();
       }
+    }
+
+    // Placement mode indicator
+    if (placementMode) {
+      ctx.fillStyle = 'rgba(100, 200, 255, 0.15)';
+      ctx.fillRect(offsetX, offsetY, gridW, gridH);
+      ctx.font = '14px sans-serif';
+      ctx.fillStyle = 'rgba(100, 200, 255, 0.7)';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const label = placementMode === 'ceiling-vent' ? 'Click to toggle ceiling vent' :
+        placementMode === 'door-far' ? 'Click top row to place door (far wall)' :
+        'Click left column to place door (left wall)';
+      ctx.fillText(label, offsetX + gridW / 2, offsetY + 6);
     }
   }
 
@@ -236,8 +342,8 @@
     lastTime = now;
 
     if (!paused) {
-      // Apply water while mouse is held (2D view)
-      if (mouseDown && mode === 'water' && activeView === '2d') {
+      // Apply water while mouse is being dragged (2D view)
+      if (mouseDown && dragDistance > DRAG_THRESHOLD && activeView === '2d' && !placementMode) {
         const grid = canvasToGrid(mouseX, mouseY);
         sim.applyWater(grid.x, grid.y, FIXED_DT);
       }
@@ -269,12 +375,21 @@
   requestAnimationFrame(loop);
 
   // ── Input handling (2D canvas) ────────────────────────────
+  // Click = fire, Drag = water, Right-click = fire
+  // In placement mode, click toggles vents/doors
+
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
   canvas.addEventListener('mousedown', (e) => {
     mouseDown = true;
     mouseX = e.clientX;
     mouseY = e.clientY;
+    mouseDownX = e.clientX;
+    mouseDownY = e.clientY;
+    dragDistance = 0;
 
-    if (mode === 'fire') {
+    // Right-click always ignites
+    if (e.button === 2) {
       const grid = canvasToGrid(e.clientX, e.clientY);
       sim.ignite(grid.x, grid.y, 2);
     }
@@ -284,30 +399,48 @@
     mouseX = e.clientX;
     mouseY = e.clientY;
 
-    if (mouseDown && mode === 'fire') {
-      const grid = canvasToGrid(e.clientX, e.clientY);
-      sim.ignite(grid.x, grid.y, 1);
+    if (mouseDown) {
+      const dx = e.clientX - mouseDownX;
+      const dy = e.clientY - mouseDownY;
+      dragDistance = Math.sqrt(dx * dx + dy * dy);
     }
   });
 
-  canvas.addEventListener('mouseup', () => { mouseDown = false; });
+  canvas.addEventListener('mouseup', (e) => {
+    if (e.button === 0 && dragDistance <= DRAG_THRESHOLD) {
+      // Short click (no drag) = fire ignition OR placement
+      const grid = canvasToGrid(e.clientX, e.clientY);
+      if (placementMode) {
+        handlePlacement(grid.x, grid.y);
+      } else {
+        sim.ignite(grid.x, grid.y, 2);
+      }
+    }
+    mouseDown = false;
+    dragDistance = 0;
+  });
+
   canvas.addEventListener('mouseleave', () => {
     mouseDown = false;
     mouseX = -1;
     mouseY = -1;
+    dragDistance = 0;
   });
 
-  // Touch support
+  // Touch support: tap = fire, drag = water
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let touchDragDist = 0;
+
   canvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
     const touch = e.touches[0];
     mouseDown = true;
     mouseX = touch.clientX;
     mouseY = touch.clientY;
-    if (mode === 'fire') {
-      const grid = canvasToGrid(touch.clientX, touch.clientY);
-      sim.ignite(grid.x, grid.y, 2);
-    }
+    touchStartX = touch.clientX;
+    touchStartY = touch.clientY;
+    touchDragDist = 0;
   });
 
   canvas.addEventListener('touchmove', (e) => {
@@ -315,29 +448,75 @@
     const touch = e.touches[0];
     mouseX = touch.clientX;
     mouseY = touch.clientY;
-    if (mode === 'fire') {
-      const grid = canvasToGrid(touch.clientX, touch.clientY);
-      sim.ignite(grid.x, grid.y, 1);
-    }
+    const dx = touch.clientX - touchStartX;
+    const dy = touch.clientY - touchStartY;
+    touchDragDist = Math.sqrt(dx * dx + dy * dy);
+    dragDistance = touchDragDist;
   });
 
-  canvas.addEventListener('touchend', () => { mouseDown = false; });
+  canvas.addEventListener('touchend', (e) => {
+    if (touchDragDist <= DRAG_THRESHOLD) {
+      // Tap = fire
+      const grid = canvasToGrid(mouseX, mouseY);
+      if (placementMode) {
+        handlePlacement(grid.x, grid.y);
+      } else {
+        sim.ignite(grid.x, grid.y, 2);
+      }
+    }
+    mouseDown = false;
+    touchDragDist = 0;
+    dragDistance = 0;
+  });
 
-  // ── Mode buttons ──────────────────────────────────────────
-  btnFireMode.addEventListener('click', () => {
-    mode = 'fire';
-    btnFireMode.classList.add('active');
-    btnWaterMode.classList.remove('active');
+  // ── Placement handler ─────────────────────────────────────
+  function handlePlacement(gx, gy) {
+    if (gx < 0 || gx >= sim.cols || gy < 0 || gy >= sim.rows) return;
+
+    if (placementMode === 'ceiling-vent') {
+      sim.toggleVent(gx, gy, 'ceiling');
+    } else if (placementMode === 'door-far') {
+      // Door on far wall (row 0)
+      if (gy === 0) {
+        sim.toggleVent(gx, 0, 'door', 'far');
+      }
+    } else if (placementMode === 'door-left') {
+      // Door on left wall (col 0)
+      if (gx === 0) {
+        sim.toggleVent(0, gy, 'door', 'left');
+      }
+    }
+  }
+
+  // ── Placement mode buttons ────────────────────────────────
+  function setPlacementMode(mode) {
+    if (placementMode === mode) {
+      placementMode = null; // toggle off
+    } else {
+      placementMode = mode;
+    }
+    // Update button active states
+    if (btnPlaceVent) btnPlaceVent.classList.toggle('active', placementMode === 'ceiling-vent');
+    if (btnPlaceDoorFar) btnPlaceDoorFar.classList.toggle('active', placementMode === 'door-far');
+    if (btnPlaceDoorLeft) btnPlaceDoorLeft.classList.toggle('active', placementMode === 'door-left');
+
+    // Update cursor
+    canvas.style.cursor = placementMode ? 'cell' : 'crosshair';
+  }
+
+  if (btnPlaceVent) btnPlaceVent.addEventListener('click', () => setPlacementMode('ceiling-vent'));
+  if (btnPlaceDoorFar) btnPlaceDoorFar.addEventListener('click', () => setPlacementMode('door-far'));
+  if (btnPlaceDoorLeft) btnPlaceDoorLeft.addEventListener('click', () => setPlacementMode('door-left'));
+  if (btnClearVents) btnClearVents.addEventListener('click', () => {
+    sim.clearVents();
+    placementMode = null;
+    if (btnPlaceVent) btnPlaceVent.classList.remove('active');
+    if (btnPlaceDoorFar) btnPlaceDoorFar.classList.remove('active');
+    if (btnPlaceDoorLeft) btnPlaceDoorLeft.classList.remove('active');
     canvas.style.cursor = 'crosshair';
   });
 
-  btnWaterMode.addEventListener('click', () => {
-    mode = 'water';
-    btnWaterMode.classList.add('active');
-    btnFireMode.classList.remove('active');
-    canvas.style.cursor = 'none';
-  });
-
+  // ── Pause / Reset ─────────────────────────────────────────
   btnPause.addEventListener('click', () => {
     paused = !paused;
     btnPause.textContent = paused ? 'Resume' : 'Pause';
@@ -397,6 +576,7 @@
 
   // ── Sliders ───────────────────────────────────────────────
   function bindSlider(slider, display, prop, format) {
+    if (!slider || !display) return;
     const update = () => {
       const v = parseFloat(slider.value);
       sim[prop] = v;
@@ -412,6 +592,7 @@
   bindSlider(sliderMaxIntensity, valMaxIntensity, 'maxIntensity', v => v.toFixed(2));
   bindSlider(sliderWaterStrength, valWaterStrength, 'waterStrength', v => v.toFixed(1));
   bindSlider(sliderWaterRadius, valWaterRadius, 'waterRadius');
+  bindSlider(sliderVentStrength, valVentStrength, 'ventStrength', v => v.toFixed(1));
 
   checkboxGrid.addEventListener('change', () => {
     showGrid = checkboxGrid.checked;
