@@ -88,6 +88,7 @@
             <button id="btn-pause" class="action-btn">Pause</button>
             <button id="btn-reset" class="action-btn danger">Reset</button>
           </div>
+          <button id="btn-share-viewer" class="action-btn share-btn" style="margin-top:8px;width:100%">Open 3D Viewer on Another Device</button>
         </div>
 
         <div class="control-group stats">
@@ -102,6 +103,22 @@
 
   <button id="toggle-panel-btn" aria-label="Toggle controls">&#9881;</button>
 
+  <!-- Share Viewer modal -->
+  <div id="share-modal" class="share-modal-overlay" style="display:none">
+    <div class="share-modal">
+      <button id="share-modal-close" class="share-modal-close">&times;</button>
+      <h3>Open 3D Viewer</h3>
+      <p class="share-modal-desc">Scan the QR code or copy the link to open the fullscreen 3D view on another device.</p>
+      <canvas id="share-qr"></canvas>
+      <div class="share-url-row">
+        <input id="share-url" type="text" readonly>
+        <button id="btn-copy-url" class="action-btn">Copy</button>
+      </div>
+      <p id="share-copy-status" class="share-copy-status"></p>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="simulation.js"></script>
   <script src="room3d.js"></script>

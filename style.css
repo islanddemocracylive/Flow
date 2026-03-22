@@ -263,6 +263,101 @@ select {
   font-weight: bold;
 }
 
+/* ── Share Viewer modal ───────────────────────────────── */
+.share-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.share-modal {
+  background: #16213e;
+  border: 1px solid #0f3460;
+  border-radius: 12px;
+  padding: 28px 32px;
+  max-width: 360px;
+  width: 90%;
+  text-align: center;
+  position: relative;
+}
+
+.share-modal h3 {
+  font-size: 1.1rem;
+  color: #ff6b35;
+  margin-bottom: 6px;
+}
+
+.share-modal-desc {
+  font-size: 0.8rem;
+  color: #888;
+  margin-bottom: 16px;
+}
+
+.share-modal canvas {
+  display: block;
+  margin: 0 auto 16px;
+  border-radius: 8px;
+}
+
+.share-modal-close {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 1.4rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.share-modal-close:hover {
+  color: #e0e0e0;
+}
+
+.share-url-row {
+  display: flex;
+  gap: 8px;
+}
+
+.share-url-row input {
+  flex: 1;
+  background: #0f3460;
+  color: #e0e0e0;
+  border: 1px solid #1a3a6e;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-family: monospace;
+  outline: none;
+  min-width: 0;
+}
+
+.share-url-row .action-btn {
+  flex: none;
+  padding: 6px 14px;
+}
+
+.share-copy-status {
+  font-size: 0.75rem;
+  color: #4a4;
+  margin-top: 8px;
+  min-height: 1em;
+}
+
+.share-btn {
+  border-color: #3a6ea5;
+  color: #6cb4ee;
+}
+
+.share-btn:hover {
+  background: #0f3460;
+}
+
 /* ── Mobile toggle button ─────────────────────────────── */
 #toggle-panel-btn {
   display: none;
