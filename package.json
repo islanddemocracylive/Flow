@@ -1,0 +1,12 @@
+{
+  "name": "fire-ceiling-simulation",
+  "version": "1.0.0",
+  "description": "Fire & Water Ceiling Simulation with remote 3D viewing",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

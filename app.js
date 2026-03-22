@@ -48,6 +48,11 @@
   // Expose simulation globally so room3d.js can read it
   window.fireSim = sim;
 
+  // ── Network (remote viewing) ────────────────────────────
+  let net = null;
+  let lastNetSend = 0;
+  try { net = new SimNetwork('controller'); } catch (e) { /* no server */ }
+
   // ── View tab switching ────────────────────────────────────
   const viewTabs = document.querySelectorAll('.view-tab');
   const viewPanels = document.querySelectorAll('.view-panel');
@@ -251,6 +256,13 @@
     }
 
     updateStats();
+
+    // Send heat data to remote viewers (throttled to 20fps)
+    if (net && net.connected && now - lastNetSend > 50) {
+      net.sendHeat(sim.heat);
+      lastNetSend = now;
+    }
+
     requestAnimationFrame(loop);
   }
 
@@ -333,6 +345,7 @@
 
   btnReset.addEventListener('click', () => {
     sim.reset();
+    if (net && net.connected) net.sendReset();
   });
 
   // ── Sliders ───────────────────────────────────────────────
@@ -341,6 +354,7 @@
       const v = parseFloat(slider.value);
       sim[prop] = v;
       display.textContent = format ? format(v) : v;
+      if (net && net.connected) net.sendParams({ [prop]: v });
     };
     slider.addEventListener('input', update);
     update();

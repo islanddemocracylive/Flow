@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fire Simulation – 3D Viewer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0a14; overflow: hidden; height: 100vh; }
+    #room3d-container { width: 100vw; height: 100vh; }
+    #room3d-container canvas { display: block; width: 100% !important; height: 100% !important; }
+    #status {
+      position: fixed; top: 12px; right: 16px;
+      color: #666; font: 12px/1 monospace;
+      z-index: 10; user-select: none;
+    }
+    #status.connected { color: #4a4; }
+  </style>
+</head>
+<body>
+  <div id="room3d-container"></div>
+  <div id="status">Connecting...</div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="simulation.js"></script>
+  <script src="room3d.js"></script>
+  <script src="network.js"></script>
+  <script src="viewer-app.js"></script>
+</body>
+</html>
