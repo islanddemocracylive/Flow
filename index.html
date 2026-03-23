@@ -10,7 +10,7 @@
   <div id="app">
     <header>
       <h1>Ceiling Fire Simulation</h1>
-      <p class="subtitle">Click the ceiling to start fires. Click &amp; drag to spray water. 20&times;10 panel grid (1 ft&sup2; panels).</p>
+      <p class="subtitle">Click to start fires. Click &amp; drag to spray water. Add vents and doors to influence airflow. 20&times;10 panel grid (1 ft&sup2; panels).</p>
     </header>
 
     <div id="mobile-stats" class="mobile-stats" style="display:none;">
@@ -35,11 +35,14 @@
         <h2>Controls</h2>
 
         <div class="control-group">
-          <h3>Mode</h3>
-          <div class="button-row">
-            <button id="btn-fire-mode" class="mode-btn active" title="Click to place fire">Place Fire</button>
-            <button id="btn-water-mode" class="mode-btn" title="Click & drag to spray water">Spray Water</button>
+          <h3>Room Features</h3>
+          <p class="control-hint">Click the 2D grid to place/remove</p>
+          <div class="button-row placement-row">
+            <button id="btn-place-vent" class="placement-btn" title="Click ceiling cells to toggle vents">Ceiling Vent</button>
+            <button id="btn-place-door-far" class="placement-btn" title="Click top row to place door on far wall">Door (Far)</button>
+            <button id="btn-place-door-left" class="placement-btn" title="Click left column to place door on left wall">Door (Left)</button>
           </div>
+          <button id="btn-clear-vents" class="action-btn" style="margin-top:6px;width:100%;font-size:0.75rem">Clear All Vents &amp; Doors</button>
         </div>
 
         <div class="control-group">
@@ -72,6 +75,15 @@
             Spray Radius
             <input type="range" id="water-radius" min="1" max="8" step="1" value="3">
             <span class="value-display" id="water-radius-val">3</span>
+          </label>
+        </div>
+
+        <div class="control-group">
+          <h3>Vent Settings</h3>
+          <label>
+            Airflow Strength
+            <input type="range" id="vent-strength" min="0" max="3" step="0.1" value="1">
+            <span class="value-display" id="vent-strength-val">1.0</span>
           </label>
         </div>
 
@@ -120,6 +132,7 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="simulation.js"></script>
   <script src="room3d.js"></script>
   <script src="network.js"></script>

@@ -1,10 +1,13 @@
 /**
- * 3D Room View – Three.js cutaway room with ceiling fire panels.
+ * 3D Room View – Three.js cutaway room with ceiling fire panels,
+ * vent/door openings, and airflow arrow visualization.
  *
  * Room: 20ft wide (x) × 10ft deep (z) × 8ft tall (y)
- * Camera: positioned at front-right corner looking into the room,
- *         showing the ceiling, left wall, and far wall.
+ * Camera: OrbitControls for drag-to-rotate interaction.
  * Ceiling: 20×10 grid of 1ft² panels whose colour tracks the fire simulation.
+ * Vents: dark openings in the ceiling with metallic frames.
+ * Doors: openings in walls with frames.
+ * Airflow arrows: small arrow meshes on the ceiling showing flow direction.
  */
 
 (function () {
@@ -21,13 +24,25 @@
   scene.background = new THREE.Color(0x0a0a14);
 
   const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
-  // Camera at front-right corner, elevated, looking into the room
   camera.position.set(ROOM_W + 6, ROOM_H * 0.7, ROOM_D + 8);
   camera.lookAt(ROOM_W * 0.4, ROOM_H * 0.6, ROOM_D * 0.35);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   container.appendChild(renderer.domElement);
+
+  // ── OrbitControls ───────────────────────────────────────────
+  let controls = null;
+  if (typeof THREE.OrbitControls !== 'undefined') {
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.set(ROOM_W / 2, ROOM_H * 0.5, ROOM_D / 2);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.12;
+    controls.minDistance = 5;
+    controls.maxDistance = 50;
+    controls.maxPolarAngle = Math.PI * 0.85; // don't go fully below floor
+    controls.update();
+  }
 
   // ── Lighting ──────────────────────────────────────────────
   const ambient = new THREE.AmbientLight(0x333344, 0.6);
@@ -55,6 +70,17 @@
 
   const edgeMat = new THREE.LineBasicMaterial({ color: 0x555566 });
 
+  const ventFrameMat = new THREE.MeshLambertMaterial({ color: 0x777788 });
+  const ventOpeningMat = new THREE.MeshBasicMaterial({
+    color: 0x050510,
+    side: THREE.DoubleSide,
+  });
+  const doorFrameMat = new THREE.MeshLambertMaterial({ color: 0x8b7355 });
+  const doorOpeningMat = new THREE.MeshBasicMaterial({
+    color: 0x020208,
+    side: THREE.DoubleSide,
+  });
+
   // ── Floor ─────────────────────────────────────────────────
   const floorGeo = new THREE.PlaneGeometry(ROOM_W, ROOM_D);
   const floor = new THREE.Mesh(floorGeo, floorMat);
@@ -62,19 +88,121 @@
   floor.position.set(ROOM_W / 2, 0, ROOM_D / 2);
   scene.add(floor);
 
-  // ── Walls ─────────────────────────────────────────────────
-  // Far wall (z = 0, facing +z)
-  const farWallGeo = new THREE.PlaneGeometry(ROOM_W, ROOM_H);
-  const farWall = new THREE.Mesh(farWallGeo, wallMat);
-  farWall.position.set(ROOM_W / 2, ROOM_H / 2, 0);
-  scene.add(farWall);
+  // ── Walls (rebuilt when doors change) ─────────────────────
+  const wallGroup = new THREE.Group();
+  scene.add(wallGroup);
 
-  // Left wall (x = 0, facing +x)
-  const leftWallGeo = new THREE.PlaneGeometry(ROOM_D, ROOM_H);
-  const leftWall = new THREE.Mesh(leftWallGeo, wallMat);
-  leftWall.rotation.y = Math.PI / 2;
-  leftWall.position.set(0, ROOM_H / 2, ROOM_D / 2);
-  scene.add(leftWall);
+  function buildWalls() {
+    // Clear previous wall meshes
+    while (wallGroup.children.length > 0) {
+      const c = wallGroup.children[0];
+      wallGroup.remove(c);
+      if (c.geometry) c.geometry.dispose();
+    }
+
+    const sim = window.fireSim;
+    const doors = sim ? sim.vents.filter(v => v.type === 'door') : [];
+
+    // Far wall (z = 0, facing +z)
+    buildWallWithDoors('far', ROOM_W, ROOM_H, { px: ROOM_W / 2, py: ROOM_H / 2, pz: 0, ry: 0 }, doors);
+    // Left wall (x = 0, facing +x)
+    buildWallWithDoors('left', ROOM_D, ROOM_H, { px: 0, py: ROOM_H / 2, pz: ROOM_D / 2, ry: Math.PI / 2 }, doors);
+  }
+
+  function buildWallWithDoors(wallName, wallWidth, wallHeight, transform, allDoors) {
+    const doors = allDoors.filter(d => d.wall === wallName);
+
+    if (doors.length === 0) {
+      // Simple full wall
+      const geo = new THREE.PlaneGeometry(wallWidth, wallHeight);
+      const mesh = new THREE.Mesh(geo, wallMat);
+      mesh.position.set(transform.px, transform.py, transform.pz);
+      if (transform.ry) mesh.rotation.y = transform.ry;
+      wallGroup.add(mesh);
+      // Wireframe
+      const edges = new THREE.EdgesGeometry(geo);
+      const line = new THREE.LineSegments(edges, edgeMat);
+      line.position.copy(mesh.position);
+      line.rotation.copy(mesh.rotation);
+      wallGroup.add(line);
+      return;
+    }
+
+    // Wall with door openings - use shape with holes
+    const shape = new THREE.Shape();
+    shape.moveTo(-wallWidth / 2, -wallHeight / 2);
+    shape.lineTo(wallWidth / 2, -wallHeight / 2);
+    shape.lineTo(wallWidth / 2, wallHeight / 2);
+    shape.lineTo(-wallWidth / 2, wallHeight / 2);
+    shape.lineTo(-wallWidth / 2, -wallHeight / 2);
+
+    const DOOR_W = 3;
+    const DOOR_H = 6.5;
+
+    for (const door of doors) {
+      // Convert grid position to local wall coordinate
+      let localX;
+      if (wallName === 'far') {
+        localX = door.x - wallWidth / 2 + 0.5;
+      } else if (wallName === 'left') {
+        localX = door.y - wallWidth / 2 + 0.5;
+      } else {
+        localX = door.x - wallWidth / 2 + 0.5;
+      }
+
+      const holeLeft = localX - DOOR_W / 2;
+      const holeRight = localX + DOOR_W / 2;
+      const holeBottom = -wallHeight / 2;
+      const holeTop = holeBottom + DOOR_H;
+
+      const hole = new THREE.Path();
+      hole.moveTo(holeLeft, holeBottom);
+      hole.lineTo(holeRight, holeBottom);
+      hole.lineTo(holeRight, holeTop);
+      hole.lineTo(holeLeft, holeTop);
+      hole.lineTo(holeLeft, holeBottom);
+      shape.holes.push(hole);
+
+      // Door frame
+      const frameThickness = 0.15;
+      const frameParts = [
+        // Left jamb
+        { w: frameThickness, h: DOOR_H, lx: holeLeft - frameThickness / 2, ly: holeBottom + DOOR_H / 2 },
+        // Right jamb
+        { w: frameThickness, h: DOOR_H, lx: holeRight + frameThickness / 2, ly: holeBottom + DOOR_H / 2 },
+        // Header
+        { w: DOOR_W + frameThickness * 2, h: frameThickness, lx: localX, ly: holeTop + frameThickness / 2 },
+      ];
+      for (const fp of frameParts) {
+        const fg = new THREE.PlaneGeometry(fp.w, fp.h);
+        const fm = new THREE.Mesh(fg, doorFrameMat);
+        // Position relative to wall center, then offset by a tiny amount
+        if (wallName === 'far') {
+          fm.position.set(transform.px + fp.lx, transform.py + fp.ly - wallHeight / 2 + wallHeight / 2, transform.pz + 0.01);
+        } else if (wallName === 'left') {
+          fm.position.set(transform.px + 0.01, transform.py + fp.ly - wallHeight / 2 + wallHeight / 2, transform.pz + fp.lx);
+          fm.rotation.y = Math.PI / 2;
+        }
+        wallGroup.add(fm);
+      }
+    }
+
+    const geo = new THREE.ShapeGeometry(shape);
+    const mesh = new THREE.Mesh(geo, wallMat);
+    mesh.position.set(transform.px, transform.py, transform.pz);
+    if (transform.ry) mesh.rotation.y = transform.ry;
+    wallGroup.add(mesh);
+
+    // Wireframe for wall
+    const edges = new THREE.EdgesGeometry(geo);
+    const line = new THREE.LineSegments(edges, edgeMat);
+    line.position.copy(mesh.position);
+    line.rotation.copy(mesh.rotation);
+    wallGroup.add(line);
+  }
+
+  // Initial wall build
+  buildWalls();
 
   // ── Room wireframe edges (for depth perception) ───────────
   // Floor outline
@@ -83,18 +211,6 @@
   floorLine.rotation.x = -Math.PI / 2;
   floorLine.position.copy(floor.position);
   scene.add(floorLine);
-
-  // Wall edges
-  addWireframe(farWall, farWallGeo);
-  addWireframe(leftWall, leftWallGeo);
-
-  function addWireframe(mesh, geo) {
-    const edges = new THREE.EdgesGeometry(geo);
-    const line = new THREE.LineSegments(edges, edgeMat);
-    line.position.copy(mesh.position);
-    line.rotation.copy(mesh.rotation);
-    scene.add(line);
-  }
 
   // Vertical edge lines at room corners for structure
   const cornerMat = new THREE.LineBasicMaterial({ color: 0x666677 });
@@ -171,6 +287,102 @@
     scene.add(new THREE.Line(geo, gridLineMat));
   }
 
+  // ── Vent meshes (ceiling vents) ─────────────────────────────
+  const ventGroup = new THREE.Group();
+  scene.add(ventGroup);
+
+  // Track last vent config to know when to rebuild
+  let lastVentKey = '';
+
+  function buildVentMeshes() {
+    while (ventGroup.children.length > 0) {
+      const c = ventGroup.children[0];
+      ventGroup.remove(c);
+      if (c.geometry) c.geometry.dispose();
+    }
+
+    const sim = window.fireSim;
+    if (!sim) return;
+
+    for (const vent of sim.vents) {
+      if (vent.type === 'ceiling') {
+        // Dark opening slightly above panel
+        const openGeo = new THREE.PlaneGeometry(PANEL_SIZE - 0.05, PANEL_SIZE - 0.05);
+        const openMesh = new THREE.Mesh(openGeo, ventOpeningMat);
+        openMesh.rotation.x = Math.PI / 2;
+        openMesh.position.set(
+          vent.x + 0.5,
+          ROOM_H + 0.005,
+          vent.y + 0.5
+        );
+        ventGroup.add(openMesh);
+
+        // Vent frame (4 edges)
+        const frameSize = PANEL_SIZE;
+        const ft = 0.06; // frame thickness
+        const fh = 0.12; // frame height
+        const frameGeo = new THREE.BoxGeometry(frameSize, fh, ft);
+
+        const sides = [
+          { x: vent.x + 0.5, z: vent.y, ry: 0 },          // front edge
+          { x: vent.x + 0.5, z: vent.y + 1, ry: 0 },      // back edge
+          { x: vent.x, z: vent.y + 0.5, ry: Math.PI / 2 }, // left edge
+          { x: vent.x + 1, z: vent.y + 0.5, ry: Math.PI / 2 }, // right edge
+        ];
+        for (const s of sides) {
+          const fm = new THREE.Mesh(frameGeo, ventFrameMat);
+          fm.position.set(s.x, ROOM_H + fh / 2, s.z);
+          fm.rotation.y = s.ry;
+          ventGroup.add(fm);
+        }
+
+        // Vent grate lines (horizontal slats)
+        const grateMat = new THREE.LineBasicMaterial({ color: 0x999aaa });
+        for (let i = 1; i <= 3; i++) {
+          const gPos = vent.y + i * 0.25;
+          const grateGeo = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(vent.x + 0.1, ROOM_H + 0.01, gPos),
+            new THREE.Vector3(vent.x + 0.9, ROOM_H + 0.01, gPos),
+          ]);
+          ventGroup.add(new THREE.Line(grateGeo, grateMat));
+        }
+      }
+    }
+  }
+
+  // ── Airflow arrow meshes ──────────────────────────────────
+  const arrowGroup = new THREE.Group();
+  scene.add(arrowGroup);
+
+  // Create a reusable arrow shape (small triangle)
+  function createArrowMesh() {
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0.3);
+    shape.lineTo(-0.12, -0.1);
+    shape.lineTo(0.12, -0.1);
+    shape.lineTo(0, 0.3);
+    const geo = new THREE.ShapeGeometry(shape);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x66bbff,
+      transparent: true,
+      opacity: 0.0,
+      side: THREE.DoubleSide,
+    });
+    return new THREE.Mesh(geo, mat);
+  }
+
+  // Pre-create arrows for every other cell (10x5 grid = 50 arrows)
+  const arrowMeshes = [];
+  for (let row = 0; row < ROOM_D; row += 2) {
+    for (let col = 0; col < ROOM_W; col += 2) {
+      const arrow = createArrowMesh();
+      arrow.position.set(col + 1, ROOM_H - 0.15, row + 1);
+      arrow.rotation.x = -Math.PI / 2; // lay flat on ceiling, facing down
+      arrowGroup.add(arrow);
+      arrowMeshes.push({ mesh: arrow, col, row });
+    }
+  }
+
   // ── Heat to colour mapping ────────────────────────────────
   const baseColor = new THREE.Color(0x1a1a24);
 
@@ -212,15 +424,59 @@
       const sim = window.fireSim;
       if (!sim) return;
 
+      // Check if vents changed – rebuild meshes if needed
+      const ventKey = JSON.stringify(sim.vents);
+      if (ventKey !== lastVentKey) {
+        lastVentKey = ventKey;
+        buildVentMeshes();
+        buildWalls();
+      }
+
       let totalGlow = 0;
 
       for (let i = 0; i < panelMeshes.length; i++) {
         const { mesh, col, row } = panelMeshes[i];
         const heat = sim.heat[sim.idx(col, row)];
-        const color = heatToColor(heat);
-        mesh.material.color.copy(color);
+
+        // Ceiling vent panels appear as dark openings
+        if (sim.isCeilingVent(col, row)) {
+          mesh.material.color.set(0x050510);
+          mesh.material.opacity = 0.3;
+          mesh.material.transparent = true;
+        } else {
+          const color = heatToColor(heat);
+          mesh.material.color.copy(color);
+          mesh.material.opacity = 1;
+          mesh.material.transparent = false;
+        }
 
         totalGlow += heat;
+      }
+
+      // Update airflow arrows
+      if (sim.vents.length > 0) {
+        for (const arrow of arrowMeshes) {
+          const af = sim.getAirflow(arrow.col, arrow.row);
+          const mag = Math.sqrt(af.vx * af.vx + af.vy * af.vy);
+
+          if (mag > 0.02) {
+            // Rotate arrow to point in airflow direction
+            // Airflow vx = grid x direction, vy = grid y direction
+            // In 3D: grid x = Three.js x, grid y = Three.js z
+            const angle = Math.atan2(-af.vx, -af.vy); // rotation around Y axis (on XZ plane)
+            arrow.mesh.rotation.x = -Math.PI / 2;
+            arrow.mesh.rotation.y = 0;
+            arrow.mesh.rotation.z = angle;
+            arrow.mesh.material.opacity = Math.min(0.6, mag * 0.8);
+          } else {
+            arrow.mesh.material.opacity = 0;
+          }
+        }
+      } else {
+        // No vents – hide all arrows
+        for (const arrow of arrowMeshes) {
+          arrow.mesh.material.opacity = 0;
+        }
       }
 
       // Update the dynamic fire light based on overall fire intensity
@@ -231,6 +487,7 @@
 
     /** Render the 3D scene */
     render() {
+      if (controls) controls.update();
       renderer.render(scene, camera);
     },
 

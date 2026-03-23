@@ -240,6 +240,42 @@ select {
   border-color: #ff6b35;
 }
 
+/* Placement mode buttons */
+.placement-row {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.placement-btn {
+  flex: 1;
+  min-width: 70px;
+  padding: 6px 8px;
+  border: 1px solid #1a5a8a;
+  border-radius: 4px;
+  background: #0f2a4a;
+  color: #6cb4ee;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.placement-btn:hover {
+  background: #1a3a6e;
+}
+
+.placement-btn.active {
+  background: #1a6a9a;
+  color: #fff;
+  border-color: #4ac;
+  box-shadow: 0 0 6px rgba(80, 180, 255, 0.3);
+}
+
+.control-hint {
+  font-size: 0.7rem;
+  color: #666;
+  margin-bottom: 6px;
+}
+
 .action-btn.danger {
   border-color: #e74c3c;
   color: #e74c3c;
