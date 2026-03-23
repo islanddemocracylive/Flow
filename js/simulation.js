@@ -30,6 +30,7 @@ export class FireSimulation {
     this.maxIntensity = 1.0;
     this.waterStrength = 3.0;
     this.waterRadius = 3;
+    this.sprayPSI = 100;          // nozzle pressure – controls max reach
 
     // Vent mechanics
     // Each vent: { x, y, type: 'ceiling'|'door', wall?: 'far'|'left'|'right'|'back' }
@@ -91,19 +92,88 @@ export class FireSimulation {
     }
   }
 
-  applyWater(cx, cy, dt) {
-    const r = this.waterRadius;
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
+  /**
+   * Compute spray parameters based on 3D distance from player to ceiling hit.
+   * playerPos: {x, y, z} in room coords.
+   * hitGridX, hitGridY: grid cell the spray is aimed at.
+   * Returns null if out of range, or { radiusX, radiusZ, angle, strength }.
+   */
+  getSprayParams(hitGridX, hitGridY, playerPos) {
+    const HOSE_HEIGHT = 4;              // hose held at chest level (ft)
+    const CEILING_H = 8;               // room ceiling height (ft)
+    const verticalDist = CEILING_H - HOSE_HEIGHT;
+
+    // 3D distance from hose to ceiling hit point
+    const hitWorldX = hitGridX + 0.5;
+    const hitWorldZ = hitGridY + 0.5;
+    const dx = hitWorldX - playerPos.x;
+    const dz = hitWorldZ - playerPos.z;
+    const horizDist = Math.sqrt(dx * dx + dz * dz);
+    const totalDist = Math.sqrt(horizDist * horizDist + verticalDist * verticalDist);
+
+    // Max reach scales with PSI: ~30 ft at 100 PSI (fog nozzle)
+    const maxReach = this.sprayPSI * 0.3;
+    if (totalDist > maxReach) return null;
+
+    // Incidence angle: 0 = directly overhead, π/2 = horizontal
+    const incidenceAngle = Math.atan2(horizDist, verticalDist);
+
+    // Spray radius: base radius shrinks with distance, elongates with angle
+    const distFactor = Math.max(0.2, 1.0 - totalDist / maxReach);
+    const baseR = this.waterRadius * distFactor;
+
+    // Overhead: circle. At angle: ellipse elongated along spray direction.
+    // Minor axis (perpendicular): stays ~baseR. Major axis: stretches with 1/cos(θ).
+    const cosAngle = Math.max(0.15, Math.cos(incidenceAngle));
+    const majorR = baseR / cosAngle;   // elongated along spray direction
+    const minorR = baseR;              // perpendicular stays the same
+
+    // Spray direction angle on the ceiling (atan2 of horiz vector)
+    const sprayAngle = Math.atan2(dz, dx);
+
+    // Strength falls off with distance
+    const strengthFactor = distFactor * distFactor;
+
+    return {
+      majorR,
+      minorR,
+      sprayAngle,
+      strengthFactor,
+    };
+  }
+
+  applyWater(cx, cy, dt, playerPos) {
+    // If no player position provided, fall back to simple circular spray
+    const params = playerPos ? this.getSprayParams(cx, cy, playerPos) : null;
+
+    if (playerPos && !params) return; // out of range
+
+    const majorR = params ? params.majorR : this.waterRadius;
+    const minorR = params ? params.minorR : this.waterRadius;
+    const angle = params ? params.sprayAngle : 0;
+    const strengthMul = params ? params.strengthFactor : 1.0;
+
+    const cosA = Math.cos(-angle);
+    const sinA = Math.sin(-angle);
+    const rMax = Math.ceil(Math.max(majorR, minorR));
+
+    for (let dy = -rMax; dy <= rMax; dy++) {
+      for (let dx = -rMax; dx <= rMax; dx++) {
         const x = cx + dx;
         const y = cy + dy;
         if (x < 0 || x >= this.cols || y < 0 || y >= this.rows) continue;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist <= r) {
-          const falloff = 1.0 - (dist / r);
-          const i = this.idx(x, y);
-          this.heat[i] = Math.max(0, this.heat[i] - this.waterStrength * falloff * dt);
-        }
+
+        // Rotate offset into ellipse-local coords (aligned with spray direction)
+        const lx = dx * cosA - dy * sinA;
+        const ly = dx * sinA + dy * cosA;
+
+        // Elliptical distance: (lx/majorR)^2 + (ly/minorR)^2 <= 1
+        const ellipseDist = (lx * lx) / (majorR * majorR) + (ly * ly) / (minorR * minorR);
+        if (ellipseDist > 1.0) continue;
+
+        const falloff = 1.0 - Math.sqrt(ellipseDist);
+        const i = this.idx(x, y);
+        this.heat[i] = Math.max(0, this.heat[i] - this.waterStrength * strengthMul * falloff * dt);
       }
     }
   }
@@ -433,6 +503,7 @@ export class FireSimulation {
         maxIntensity: this.maxIntensity,
         waterStrength: this.waterStrength,
         waterRadius: this.waterRadius,
+        sprayPSI: this.sprayPSI,
         ventStrength: this.ventStrength,
       },
     };

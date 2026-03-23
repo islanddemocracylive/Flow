@@ -13,7 +13,7 @@ import { panelMeshes } from './ceiling.js';
 import { buildVentMeshes } from './vents.js';
 import { buildObstacleMeshes } from './obstacles.js';
 import { raycastCeiling, showWaterSpray, hideWaterSpray } from './raycaster.js';
-import { updateCamera, resetToStart } from './fpCamera.js';
+import { updateCamera, resetToStart, getPlayerPosition } from './fpCamera.js';
 
 // Track last vent config to know when to rebuild
 let lastVentKey = '';
@@ -90,6 +90,7 @@ const room3d = {
   showWaterSpray,
   hideWaterSpray,
   resetToStart,
+  getPlayerPosition,
 };
 
 export default room3d;

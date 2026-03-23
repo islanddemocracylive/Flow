@@ -267,3 +267,11 @@ export function updateCamera(sim) {
 export function resetToStart(sim) {
   computeStartPosition(sim);
 }
+
+/**
+ * Return player position {x, y, z} for spray distance calculations.
+ */
+export function getPlayerPosition() {
+  if (!fpPosition) return { x: 0, y: EYE_HEIGHT, z: 0 };
+  return { x: fpPosition.x, y: fpPosition.y, z: fpPosition.z };
+}

@@ -27,6 +27,7 @@ net.onParams = (params) => {
   if (params.maxIntensity !== undefined) sim.maxIntensity = params.maxIntensity;
   if (params.waterStrength !== undefined) sim.waterStrength = params.waterStrength;
   if (params.waterRadius !== undefined) sim.waterRadius = params.waterRadius;
+  if (params.sprayPSI !== undefined) sim.sprayPSI = params.sprayPSI;
 };
 
 net.onReset = () => {

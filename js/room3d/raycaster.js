@@ -27,7 +27,7 @@ export function raycastCeiling(clientX, clientY) {
   return null;
 }
 
-// Water spray visual indicator
+// Water spray visual indicator – elliptical shape
 let sprayIndicator = null;
 
 if (scene) {
@@ -45,10 +45,25 @@ if (scene) {
   scene.add(sprayIndicator);
 }
 
-export function showWaterSpray(gridX, gridY, radius) {
+/**
+ * Show the spray indicator with elliptical shape.
+ * params: { majorR, minorR, sprayAngle, strengthFactor } from sim.getSprayParams()
+ */
+export function showWaterSpray(gridX, gridY, params) {
   if (!sprayIndicator) return;
+  if (!params) {
+    sprayIndicator.visible = false;
+    return;
+  }
   sprayIndicator.position.set(gridX + 0.5, ROOM_H - 0.02, gridY + 0.5);
-  sprayIndicator.scale.set(radius, radius, radius);
+  // Scale X = major radius (along spray direction), Y = minor radius (perpendicular)
+  sprayIndicator.scale.set(params.majorR, params.minorR, 1);
+  // Rotate on the ceiling plane to align with spray direction
+  sprayIndicator.rotation.x = Math.PI / 2;
+  sprayIndicator.rotation.y = 0;
+  sprayIndicator.rotation.z = -params.sprayAngle;
+  // Fade opacity with distance
+  sprayIndicator.material.opacity = 0.15 + 0.35 * params.strengthFactor;
   sprayIndicator.visible = true;
 }
 

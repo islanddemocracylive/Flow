@@ -128,8 +128,14 @@ function loop(now) {
     if (state.mouse3dDown && state.dragDistance3d > DRAG_THRESHOLD && state.activeView === '3d' && room3d.available) {
       const hit = room3d.raycastCeiling(state.mouseX3d, state.mouseY3d);
       if (hit) {
-        sim.applyWater(hit.gridX, hit.gridY, FIXED_DT);
-        room3d.showWaterSpray(hit.gridX, hit.gridY, sim.waterRadius);
+        const playerPos = room3d.getPlayerPosition();
+        const sprayParams = sim.getSprayParams(hit.gridX, hit.gridY, playerPos);
+        if (sprayParams) {
+          sim.applyWater(hit.gridX, hit.gridY, FIXED_DT, playerPos);
+          room3d.showWaterSpray(hit.gridX, hit.gridY, sprayParams);
+        } else {
+          room3d.hideWaterSpray();
+        }
       }
     }
 

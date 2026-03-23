@@ -188,6 +188,7 @@ export function setupAdminPanel(sim, state, net, { onPlay } = {}) {
   bindSlider('max-intensity', 'max-intensity-val', 'maxIntensity', v => v.toFixed(2));
   bindSlider('water-strength', 'water-strength-val', 'waterStrength', v => v.toFixed(1));
   bindSlider('water-radius', 'water-radius-val', 'waterRadius');
+  bindSlider('spray-psi', 'spray-psi-val', 'sprayPSI');
   bindSlider('vent-strength', 'vent-strength-val', 'ventStrength', v => v.toFixed(1));
 
   function syncSliders(sim) {
@@ -197,6 +198,7 @@ export function setupAdminPanel(sim, state, net, { onPlay } = {}) {
       ['max-intensity', 'max-intensity-val', 'maxIntensity', v => v.toFixed(2)],
       ['water-strength', 'water-strength-val', 'waterStrength', v => v.toFixed(1)],
       ['water-radius', 'water-radius-val', 'waterRadius', null],
+      ['spray-psi', 'spray-psi-val', 'sprayPSI', null],
       ['vent-strength', 'vent-strength-val', 'ventStrength', v => v.toFixed(1)],
     ];
     for (const [sliderId, displayId, prop, format] of pairs) {
