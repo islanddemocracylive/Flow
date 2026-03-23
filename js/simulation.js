@@ -210,22 +210,20 @@ export class FireSimulation {
           vy += (dy / dist) * strength;
         }
 
+        // Doors are air sources – air flows AWAY from the door into the room,
+        // then gets pulled toward ceiling vents. Vector points from door to cell.
         for (const door of doors) {
-          let pushX = 0, pushY = 0;
-          if (door.wall === 'far')   pushY = 1;
-          if (door.wall === 'back')  pushY = -1;
-          if (door.wall === 'left')  pushX = 1;
-          if (door.wall === 'right') pushX = -1;
-
           const dx = x - door.x;
           const dy = y - door.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 0.5) continue;
+
           const maxDist = Math.sqrt(cols * cols + rows * rows);
           const influence = Math.max(0, 1.0 - dist / maxDist);
-          const strength = influence * 0.7;
+          const strength = influence * influence * 0.5;
 
-          vx += pushX * strength;
-          vy += pushY * strength;
+          vx += (dx / dist) * strength;
+          vy += (dy / dist) * strength;
         }
 
         const mag = Math.sqrt(vx * vx + vy * vy);

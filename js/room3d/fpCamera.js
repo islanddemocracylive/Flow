@@ -79,8 +79,8 @@ if (renderer) {
     const dy = e.clientY - lookLastY;
     lookLastX = e.clientX;
     lookLastY = e.clientY;
-    fpYaw -= dx * LOOK_SENSITIVITY;
-    fpPitch -= dy * LOOK_SENSITIVITY;
+    fpYaw += dx * LOOK_SENSITIVITY;
+    fpPitch += dy * LOOK_SENSITIVITY;
     fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
   });
 
@@ -108,8 +108,8 @@ if (renderer) {
         const dy = t.clientY - touchLookLastY;
         touchLookLastX = t.clientX;
         touchLookLastY = t.clientY;
-        fpYaw -= dx * LOOK_SENSITIVITY;
-        fpPitch -= dy * LOOK_SENSITIVITY;
+        fpYaw += dx * LOOK_SENSITIVITY;
+        fpPitch += dy * LOOK_SENSITIVITY;
         fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
         break;
       }
