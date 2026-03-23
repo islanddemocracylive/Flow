@@ -58,10 +58,9 @@ export function showWaterSpray(gridX, gridY, params) {
   sprayIndicator.position.set(gridX + 0.5, ROOM_H - 0.02, gridY + 0.5);
   // Scale X = major radius (along spray direction), Y = minor radius (perpendicular)
   sprayIndicator.scale.set(params.majorR, params.minorR, 1);
-  // Rotate on the ceiling plane to align with spray direction
-  sprayIndicator.rotation.x = Math.PI / 2;
-  sprayIndicator.rotation.y = 0;
-  sprayIndicator.rotation.z = -params.sprayAngle;
+  // After rotation.x = π/2 the circle lies in the XZ (ceiling) plane.
+  // Rotate around Y to orient the major axis along the spray direction.
+  sprayIndicator.rotation.set(Math.PI / 2, params.sprayAngle, 0);
   // Fade opacity with distance
   sprayIndicator.material.opacity = 0.15 + 0.35 * params.strengthFactor;
   sprayIndicator.visible = true;

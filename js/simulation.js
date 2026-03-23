@@ -29,7 +29,7 @@ export class FireSimulation {
     this.ignitionThreshold = 0.15;
     this.maxIntensity = 1.0;
     this.waterStrength = 3.0;
-    this.waterRadius = 3;
+    this.waterRadius = 2;
     this.sprayPSI = 100;          // nozzle pressure – controls max reach
 
     // Vent mechanics
