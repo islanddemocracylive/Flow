@@ -189,6 +189,7 @@ export class FireSimulation {
 
     const ceilingVents = vents.filter(v => v.type === 'ceiling');
     const doors = vents.filter(v => v.type === 'door');
+    const maxDist = Math.sqrt(cols * cols + rows * rows);
 
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
@@ -196,13 +197,13 @@ export class FireSimulation {
         let vy = 0;
         const ai = (y * cols + x) * 2;
 
+        // Baseline: all cells pull toward ceiling vents (heat rises, draws air)
         for (const cv of ceilingVents) {
           const dx = cv.x - x;
           const dy = cv.y - y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < 0.5) continue;
 
-          const maxDist = Math.sqrt(cols * cols + rows * rows);
           const influence = Math.max(0, 1.0 - dist / maxDist);
           const strength = influence * influence;
 
@@ -210,20 +211,75 @@ export class FireSimulation {
           vy += (dy / dist) * strength;
         }
 
-        // Doors are air sources – air flows AWAY from the door into the room,
-        // then gets pulled toward ceiling vents. Vector points from door to cell.
+        // Door-to-vent corridor flow: curved streamlines from each door
+        // toward each vent, strongest along the direct path between them.
         for (const door of doors) {
-          const dx = x - door.x;
-          const dy = y - door.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 0.5) continue;
+          for (const cv of ceilingVents) {
+            // Vectors: door→cell and cell→vent
+            const fromDoorX = x - door.x;
+            const fromDoorY = y - door.y;
+            const distFromDoor = Math.sqrt(fromDoorX * fromDoorX + fromDoorY * fromDoorY);
 
-          const maxDist = Math.sqrt(cols * cols + rows * rows);
-          const influence = Math.max(0, 1.0 - dist / maxDist);
-          const strength = influence * influence * 0.5;
+            const toVentX = cv.x - x;
+            const toVentY = cv.y - y;
+            const distToVent = Math.sqrt(toVentX * toVentX + toVentY * toVentY);
 
-          vx += (dx / dist) * strength;
-          vy += (dy / dist) * strength;
+            if (distFromDoor < 0.5 && distToVent < 0.5) continue;
+
+            // Blend parameter: 0 near door (flow away from door), 1 near vent (flow toward vent)
+            const t = distFromDoor / (distFromDoor + distToVent);
+
+            // Unit direction vectors
+            const fdNorm = distFromDoor > 0.5 ? 1 / distFromDoor : 0;
+            const tvNorm = distToVent > 0.5 ? 1 / distToVent : 0;
+            const fdx = fromDoorX * fdNorm;
+            const fdy = fromDoorY * fdNorm;
+            const tvx = toVentX * tvNorm;
+            const tvy = toVentY * tvNorm;
+
+            // Smoothly lerp direction: curves from "away from door" to "toward vent"
+            let dirX = fdx * (1 - t) + tvx * t;
+            let dirY = fdy * (1 - t) + tvy * t;
+            const dirMag = Math.sqrt(dirX * dirX + dirY * dirY);
+            if (dirMag < 0.001) continue;
+            dirX /= dirMag;
+            dirY /= dirMag;
+
+            // Strength: strongest along the door-vent corridor, fades with distance from it
+            const dvX = cv.x - door.x;
+            const dvY = cv.y - door.y;
+            const dvDist2 = dvX * dvX + dvY * dvY;
+            // Project cell onto the door→vent line segment
+            const projT = dvDist2 > 0
+              ? Math.max(0, Math.min(1, (fromDoorX * dvX + fromDoorY * dvY) / dvDist2))
+              : 0;
+            const nearX = door.x + projT * dvX;
+            const nearY = door.y + projT * dvY;
+            const distFromLine = Math.sqrt((x - nearX) * (x - nearX) + (y - nearY) * (y - nearY));
+
+            // Corridor falloff: strong near the line, fades laterally
+            const corridorFalloff = Math.max(0, 1 - distFromLine / (maxDist * 0.45));
+            // Distance falloff: weaker as total path gets longer
+            const pathFalloff = Math.max(0, 1 - (distFromDoor + distToVent) / (maxDist * 1.8));
+
+            const strength = corridorFalloff * corridorFalloff * pathFalloff * 0.8;
+
+            vx += dirX * strength;
+            vy += dirY * strength;
+          }
+
+          // If no vents, door air just flows weakly into the room
+          if (ceilingVents.length === 0) {
+            const dx = x - door.x;
+            const dy = y - door.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist >= 0.5) {
+              const influence = Math.max(0, 1 - dist / maxDist);
+              const strength = influence * influence * 0.3;
+              vx += (dx / dist) * strength;
+              vy += (dy / dist) * strength;
+            }
+          }
         }
 
         const mag = Math.sqrt(vx * vx + vy * vy);
