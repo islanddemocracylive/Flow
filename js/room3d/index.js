@@ -5,21 +5,31 @@
  * used by app.js and viewer-app.js.
  */
 
-import { ROOM_H } from '../constants.js';
+import { ROOM_W, ROOM_D, ROOM_H } from '../constants.js';
 import { heatToColor } from '../colorUtils.js';
 import { container, scene, camera, renderer, fireLight } from './scene.js';
-import { buildWalls } from './walls.js';
+import { buildWalls, wallGroup } from './walls.js';
 import { panelMeshes } from './ceiling.js';
 import { buildVentMeshes } from './vents.js';
 import { buildObstacleMeshes } from './obstacles.js';
 import { raycastCeiling, showWaterSpray, hideWaterSpray } from './raycaster.js';
 import { updateCamera, resetToStart, getPlayerPosition } from './fpCamera.js';
+import { initOrbitCamera, enableOrbit, disableOrbit, updateOrbit } from './orbitCamera.js';
+import { buildStartMarkers } from './startMarkers.js';
 
 // Track last vent config to know when to rebuild
 let lastVentKey = '';
 
 // Bail out if Three.js not available
 const available = !!(container && scene);
+
+// Track current camera mode
+let orbitMode = false;
+
+// Initialize orbit controls
+if (available) {
+  initOrbitCamera();
+}
 
 const room3d = {
   available,
@@ -36,8 +46,9 @@ const room3d = {
       buildWalls(sim);
     }
 
-    // Always rebuild obstacles (uses internal change detection)
+    // Always rebuild obstacles and start markers (uses internal change detection)
     buildObstacleMeshes(sim);
+    buildStartMarkers(sim);
 
     let totalGlow = 0;
 
@@ -68,11 +79,38 @@ const room3d = {
     }
   },
 
-  /** Render the 3D scene (includes first-person camera update) */
+  /** Render the 3D scene with first-person camera (for viewer) */
   render(sim) {
     if (!available) return;
     updateCamera(sim);
     renderer.render(scene, camera);
+  },
+
+  /** Render the 3D scene with orbit camera (for admin) */
+  renderOrbit() {
+    if (!available) return;
+    updateOrbit();
+    renderer.render(scene, camera);
+  },
+
+  /** Switch between orbit mode (admin design) and FP mode (viewer) */
+  setOrbitMode(enabled) {
+    if (!available) return;
+    orbitMode = enabled;
+    if (enabled) {
+      // Hide walls so we can see inside
+      if (wallGroup) wallGroup.visible = false;
+      enableOrbit();
+    } else {
+      // Show walls for FP mode
+      if (wallGroup) wallGroup.visible = true;
+      disableOrbit();
+    }
+  },
+
+  /** Whether we're currently in orbit mode */
+  isOrbitMode() {
+    return orbitMode;
   },
 
   /** Handle container resize */

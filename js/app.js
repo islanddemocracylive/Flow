@@ -1,19 +1,22 @@
 /**
  * Main app controller – orchestrates simulation, rendering, input, and networking.
  *
- * The app has two modes:
- *   1. Design mode (2D view): Admin designs room scenarios
- *   2. Play mode (3D view): Firefighter trains with water spray
+ * The admin app has two views:
+ *   1. 2D view: grid-based room design
+ *   2. 3D view: orbit camera for visual inspection of the room design
+ *
+ * Fire simulation runs in whichever view is active when Play is pressed.
+ * The first-person firefighter experience lives in viewer.html.
  */
 
-import { GRID_COLS, GRID_ROWS, DRAG_THRESHOLD } from './constants.js';
+import { GRID_COLS, GRID_ROWS, ROOM_W, ROOM_D, ROOM_H } from './constants.js';
 import { FireSimulation } from './simulation.js';
 import { SimNetwork } from './network.js';
-import { render2D, resizeCanvas, canvasToGrid } from './render2d.js';
+import { render2D, resizeCanvas } from './render2d.js';
 import { setupInput2D } from './input2d.js';
-import { setupInput3D } from './input3d.js';
 import { setupAdminPanel, updateStats } from './adminPanel.js';
 import room3d from './room3d/index.js';
+import { camera } from './room3d/scene.js';
 
 // ── Simulation ────────────────────────────────────────────
 const sim = new FireSimulation(GRID_COLS, GRID_ROWS);
@@ -33,15 +36,9 @@ const state = {
   showGrid: true,
   activeView: '2d',
   designMode: null,    // 'start-location' | 'ceiling-vent' | 'door' | 'obstacle' | null
-  // 3D input state (set by input3d.js)
-  mouse3dDown: false,
-  mouseX3d: 0,
-  mouseY3d: 0,
-  dragDistance3d: 0,
-  DRAG_THRESHOLD,
 };
 
-// ── Design click handler (2D view) ───────────────────────
+// ── Design click handler (shared by 2D and 3D views) ─────
 function handleDesignClick(gx, gy) {
   if (gx < 0 || gx >= sim.cols || gy < 0 || gy >= sim.rows) return;
 
@@ -55,7 +52,6 @@ function handleDesignClick(gx, gy) {
       break;
 
     case 'door': {
-      // Doors can only go on wall edges
       let wall = null;
       if (gy === 0) wall = 'far';
       else if (gy === sim.rows - 1) wall = 'back';
@@ -74,7 +70,7 @@ function handleDesignClick(gx, gy) {
 }
 
 // ── View tab switching ────────────────────────────────────
-const viewTabs = document.querySelectorAll('.view-tab');
+const viewTabs = document.querySelectorAll('.view-tab[data-view]');
 const viewPanels = document.querySelectorAll('.view-panel');
 
 viewTabs.forEach(tab => {
@@ -91,6 +87,7 @@ viewTabs.forEach(tab => {
     if (viewId === '2d') {
       resizeCanvas();
     } else if (viewId === '3d' && room3d.available) {
+      room3d.setOrbitMode(true);
       room3d.onResize();
     }
   });
@@ -108,37 +105,103 @@ resizeCanvas();
 
 // ── Setup input + UI ──────────────────────────────────────
 setupInput2D(sim, state, handleDesignClick);
-setupInput3D(sim, state, room3d);
-setupAdminPanel(sim, state, net, {
-  onPlay: () => {
-    if (room3d.available) room3d.resetToStart(sim);
-  },
-});
+setupAdminPanel(sim, state, net);
+
+// ── 3D design click handling (orbit view) ─────────────────
+const room3dContainer = document.getElementById('room3d-container');
+
+if (room3dContainer && camera && typeof THREE !== 'undefined') {
+  const raycaster = new THREE.Raycaster();
+  const ndcMouse = new THREE.Vector2();
+  const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const ceilingPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), ROOM_H);
+  const hitPoint = new THREE.Vector3();
+
+  const wallPlanes = [
+    { plane: new THREE.Plane(new THREE.Vector3(0, 0, 1), 0),       wall: 'far',   axis: 'x' },
+    { plane: new THREE.Plane(new THREE.Vector3(0, 0, -1), ROOM_D), wall: 'back',  axis: 'x' },
+    { plane: new THREE.Plane(new THREE.Vector3(1, 0, 0), 0),       wall: 'left',  axis: 'z' },
+    { plane: new THREE.Plane(new THREE.Vector3(-1, 0, 0), ROOM_W), wall: 'right', axis: 'z' },
+  ];
+
+  let clickStartX = 0, clickStartY = 0;
+
+  room3dContainer.addEventListener('contextmenu', e => e.preventDefault());
+
+  room3dContainer.addEventListener('mousedown', (e) => {
+    clickStartX = e.clientX;
+    clickStartY = e.clientY;
+  });
+
+  room3dContainer.addEventListener('mouseup', (e) => {
+    if (!room3d.isOrbitMode() || !state.designMode) return;
+
+    // Only count as click if mouse didn't move much (not an orbit drag)
+    const dx = e.clientX - clickStartX;
+    const dy = e.clientY - clickStartY;
+    if (Math.sqrt(dx * dx + dy * dy) > 5) return;
+
+    const canvasEl = room3dContainer.querySelector('canvas');
+    if (!canvasEl) return;
+    const rect = canvasEl.getBoundingClientRect();
+    ndcMouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    ndcMouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(ndcMouse, camera);
+
+    const mode = state.designMode;
+
+    if (mode === 'obstacle') {
+      const hit = raycaster.ray.intersectPlane(floorPlane, hitPoint);
+      if (hit && hit.x >= 0 && hit.x < ROOM_W && hit.z >= 0 && hit.z < ROOM_D) {
+        const gx = Math.floor(hit.x), gy = Math.floor(hit.z);
+        if (e.button === 2) {
+          sim.removeObstacleBlock(gx, gy);
+        } else if (e.button === 0) {
+          handleDesignClick(gx, gy);
+        }
+      }
+    } else if (mode === 'door') {
+      if (e.button !== 0) return;
+      let best = null;
+      let bestDist = Infinity;
+      for (const wp of wallPlanes) {
+        const hp = new THREE.Vector3();
+        const hit = raycaster.ray.intersectPlane(wp.plane, hp);
+        if (!hit) continue;
+        if (hp.y < 0 || hp.y > ROOM_H) continue;
+        const along = wp.axis === 'x' ? hp.x : hp.z;
+        const maxAlong = wp.axis === 'x' ? ROOM_W : ROOM_D;
+        if (along < 0 || along >= maxAlong) continue;
+        const dist = raycaster.ray.origin.distanceTo(hp);
+        if (dist < bestDist) {
+          bestDist = dist;
+          let gx, gy;
+          if (wp.wall === 'far')   { gx = Math.floor(hp.x); gy = 0; }
+          if (wp.wall === 'back')  { gx = Math.floor(hp.x); gy = GRID_ROWS - 1; }
+          if (wp.wall === 'left')  { gx = 0; gy = Math.floor(hp.z); }
+          if (wp.wall === 'right') { gx = GRID_COLS - 1; gy = Math.floor(hp.z); }
+          best = { gridX: gx, gridY: gy };
+        }
+      }
+      if (best) handleDesignClick(best.gridX, best.gridY);
+    } else if (e.button === 0) {
+      // Fire starts and ceiling vents — ceiling plane
+      const hit = raycaster.ray.intersectPlane(ceilingPlane, hitPoint);
+      if (hit && hit.x >= 0 && hit.x < ROOM_W && hit.z >= 0 && hit.z < ROOM_D) {
+        handleDesignClick(Math.floor(hit.x), Math.floor(hit.z));
+      }
+    }
+  });
+}
 
 // ── Main loop ─────────────────────────────────────────────
 let lastTime = performance.now();
-const FIXED_DT = 1 / 30;
 
 function loop(now) {
   const elapsed = (now - lastTime) / 1000;
   lastTime = now;
 
   if (state.playing && !state.paused) {
-    // Apply water while dragging in 3D view
-    if (state.mouse3dDown && state.dragDistance3d > DRAG_THRESHOLD && state.activeView === '3d' && room3d.available) {
-      const hit = room3d.raycastCeiling(state.mouseX3d, state.mouseY3d);
-      if (hit) {
-        const playerPos = room3d.getPlayerPosition();
-        const sprayParams = sim.getSprayParams(hit.gridX, hit.gridY, playerPos);
-        if (sprayParams) {
-          sim.applyWater(hit.gridX, hit.gridY, FIXED_DT, playerPos);
-          room3d.showWaterSpray(hit.gridX, hit.gridY, sprayParams);
-        } else {
-          room3d.hideWaterSpray();
-        }
-      }
-    }
-
     sim.step(Math.min(elapsed, 0.05));
   }
 
@@ -148,7 +211,7 @@ function loop(now) {
   if (room3d.available) {
     room3d.updatePanels(sim);
     if (state.activeView === '3d') {
-      room3d.render(sim);
+      room3d.renderOrbit();
     }
   }
 

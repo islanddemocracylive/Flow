@@ -4,7 +4,10 @@
  * Arrow keys / on-screen D-pad: forward/back/strafe
  * Left-click+drag: look around (yaw + pitch)
  * Mobile 1-finger drag: look around
- * Camera always at eye level (6ft), anchored to ground.
+ * Camera always at eye level (5.5ft), anchored to ground.
+ *
+ * Must call enableFPCamera() to activate — starts disabled so the admin
+ * orbit view isn't disrupted.
  */
 
 import { ROOM_W, ROOM_D, ROOM_H } from '../constants.js';
@@ -35,7 +38,7 @@ let lookLastY = 0;
 let touchLookActive = false;
 let touchLookLastX = 0;
 let touchLookLastY = 0;
-let touchLookId = -1; // track which touch is the look touch
+let touchLookId = -1;
 
 // Clock for deltaTime
 const fpClock = typeof THREE !== 'undefined' ? new THREE.Clock() : null;
@@ -44,99 +47,131 @@ const fpClock = typeof THREE !== 'undefined' ? new THREE.Clock() : null;
 let startPositionComputed = false;
 let lastVentKeyForStart = '';
 
-// ── Event listeners ─────────────────────────────────────────
+// Whether FP camera is active (listeners attached)
+let fpEnabled = false;
 
-if (renderer) {
-  // Suppress context menu on 3D canvas (right-click is water spray)
-  renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+// ── Event handler functions (named so we can add/remove) ──
 
-  // Keyboard
-  document.addEventListener('keydown', (e) => {
-    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-      // Don't capture if focus is on an input element (admin panel sliders)
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-      e.preventDefault();
-      keysPressed.add(e.key);
-    }
-  });
+function onKeyDown(e) {
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    e.preventDefault();
+    keysPressed.add(e.key);
+  }
+}
 
-  document.addEventListener('keyup', (e) => {
-    keysPressed.delete(e.key);
-  });
+function onKeyUp(e) {
+  keysPressed.delete(e.key);
+}
 
-  // Left-click look
-  renderer.domElement.addEventListener('mousedown', (e) => {
-    if (e.button === 0) {
-      lookDragging = true;
-      lookLastX = e.clientX;
-      lookLastY = e.clientY;
-    }
-  });
-
-  document.addEventListener('mousemove', (e) => {
-    if (!lookDragging) return;
-    const dx = e.clientX - lookLastX;
-    const dy = e.clientY - lookLastY;
+function onMouseDown(e) {
+  if (e.button === 0) {
+    lookDragging = true;
     lookLastX = e.clientX;
     lookLastY = e.clientY;
-    fpYaw -= dx * LOOK_SENSITIVITY;
-    fpPitch -= dy * LOOK_SENSITIVITY;
-    fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
-  });
+  }
+}
 
-  document.addEventListener('mouseup', (e) => {
-    if (e.button === 0) lookDragging = false;
-  });
+function onMouseMove(e) {
+  if (!lookDragging) return;
+  const dx = e.clientX - lookLastX;
+  const dy = e.clientY - lookLastY;
+  lookLastX = e.clientX;
+  lookLastY = e.clientY;
+  fpYaw -= dx * LOOK_SENSITIVITY;
+  fpPitch -= dy * LOOK_SENSITIVITY;
+  fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
+}
 
-  // Mobile 1-finger look (single finger drags to look around)
-  renderer.domElement.addEventListener('touchstart', (e) => {
-    if (e.touches.length === 1) {
-      touchLookActive = true;
-      touchLookId = e.touches[0].identifier;
-      touchLookLastX = e.touches[0].clientX;
-      touchLookLastY = e.touches[0].clientY;
-    }
-  }, { passive: true });
+function onMouseUp(e) {
+  if (e.button === 0) lookDragging = false;
+}
 
-  renderer.domElement.addEventListener('touchmove', (e) => {
-    if (!touchLookActive) return;
-    // Find our tracked touch
-    for (let i = 0; i < e.touches.length; i++) {
-      if (e.touches[i].identifier === touchLookId) {
-        const t = e.touches[i];
-        const dx = t.clientX - touchLookLastX;
-        const dy = t.clientY - touchLookLastY;
-        touchLookLastX = t.clientX;
-        touchLookLastY = t.clientY;
-        fpYaw += dx * LOOK_SENSITIVITY;
-        fpPitch += dy * LOOK_SENSITIVITY;
-        fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
-        break;
-      }
-    }
-    // If a second finger arrives, cancel look (2-finger = water spray)
-    if (e.touches.length >= 2) {
-      touchLookActive = false;
-      touchLookId = -1;
-    }
-  }, { passive: true });
+function onContextMenu(e) {
+  e.preventDefault();
+}
 
-  renderer.domElement.addEventListener('touchend', (e) => {
-    // Check if our tracked touch is gone
-    let found = false;
-    for (let i = 0; i < e.touches.length; i++) {
-      if (e.touches[i].identifier === touchLookId) { found = true; break; }
+function onTouchStart(e) {
+  if (e.touches.length === 1) {
+    touchLookActive = true;
+    touchLookId = e.touches[0].identifier;
+    touchLookLastX = e.touches[0].clientX;
+    touchLookLastY = e.touches[0].clientY;
+  }
+}
+
+function onTouchMove(e) {
+  if (!touchLookActive) return;
+  for (let i = 0; i < e.touches.length; i++) {
+    if (e.touches[i].identifier === touchLookId) {
+      const t = e.touches[i];
+      const dx = t.clientX - touchLookLastX;
+      const dy = t.clientY - touchLookLastY;
+      touchLookLastX = t.clientX;
+      touchLookLastY = t.clientY;
+      fpYaw += dx * LOOK_SENSITIVITY;
+      fpPitch += dy * LOOK_SENSITIVITY;
+      fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
+      break;
     }
-    if (!found) {
-      touchLookActive = false;
-      touchLookId = -1;
-    }
-  }, { passive: true });
+  }
+  if (e.touches.length >= 2) {
+    touchLookActive = false;
+    touchLookId = -1;
+  }
+}
+
+function onTouchEnd(e) {
+  let found = false;
+  for (let i = 0; i < e.touches.length; i++) {
+    if (e.touches[i].identifier === touchLookId) { found = true; break; }
+  }
+  if (!found) {
+    touchLookActive = false;
+    touchLookId = -1;
+  }
+}
+
+// ── Enable / Disable ─────────────────────────────────────
+
+export function enableFPCamera() {
+  if (fpEnabled || !renderer) return;
+  fpEnabled = true;
+
+  renderer.domElement.addEventListener('contextmenu', onContextMenu);
+  document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('keyup', onKeyUp);
+  renderer.domElement.addEventListener('mousedown', onMouseDown);
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mouseup', onMouseUp);
+  renderer.domElement.addEventListener('touchstart', onTouchStart, { passive: true });
+  renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: true });
+  renderer.domElement.addEventListener('touchend', onTouchEnd, { passive: true });
+
+  // Reset clock so first getDelta isn't huge
+  if (fpClock) fpClock.getDelta();
+}
+
+export function disableFPCamera() {
+  if (!fpEnabled || !renderer) return;
+  fpEnabled = false;
+  keysPressed.clear();
+  lookDragging = false;
+  touchLookActive = false;
+
+  renderer.domElement.removeEventListener('contextmenu', onContextMenu);
+  document.removeEventListener('keydown', onKeyDown);
+  document.removeEventListener('keyup', onKeyUp);
+  renderer.domElement.removeEventListener('mousedown', onMouseDown);
+  document.removeEventListener('mousemove', onMouseMove);
+  document.removeEventListener('mouseup', onMouseUp);
+  renderer.domElement.removeEventListener('touchstart', onTouchStart);
+  renderer.domElement.removeEventListener('touchmove', onTouchMove);
+  renderer.domElement.removeEventListener('touchend', onTouchEnd);
 }
 
 // ── On-screen D-pad support ──────────────────────────────────
 
-// Arrow buttons fire synthetic key presses
 function setupDpadButton(id, key) {
   const btn = document.getElementById(id);
   if (!btn) return;
@@ -170,7 +205,6 @@ function computeStartPosition(sim) {
 
   const doors = sim.vents.filter(v => v.type === 'door');
   if (doors.length === 0) {
-    // Default: outside back wall, facing room
     fpPosition.set(ROOM_W / 2, EYE_HEIGHT, ROOM_D + 5);
     fpYaw = 0;
     return;
@@ -181,16 +215,16 @@ function computeStartPosition(sim) {
 
   if (door.wall === 'far') {
     fpPosition.set(door.x + 0.5, EYE_HEIGHT, -STANDOFF);
-    fpYaw = Math.PI; // face +z (into room)
+    fpYaw = Math.PI;
   } else if (door.wall === 'back') {
     fpPosition.set(door.x + 0.5, EYE_HEIGHT, ROOM_D + STANDOFF);
-    fpYaw = 0; // face -z (into room)
+    fpYaw = 0;
   } else if (door.wall === 'left') {
     fpPosition.set(-STANDOFF, EYE_HEIGHT, door.y + 0.5);
-    fpYaw = -Math.PI / 2; // face +x (into room)
+    fpYaw = -Math.PI / 2;
   } else if (door.wall === 'right') {
     fpPosition.set(ROOM_W + STANDOFF, EYE_HEIGHT, door.y + 0.5);
-    fpYaw = Math.PI / 2; // face -x (into room)
+    fpYaw = Math.PI / 2;
   }
 
   fpPitch = 0;
@@ -199,7 +233,7 @@ function computeStartPosition(sim) {
 // ── Per-frame update ──────────────────────────────────────
 
 export function updateCamera(sim) {
-  if (!camera || !fpPosition || !fpClock) return;
+  if (!camera || !fpPosition || !fpClock || !fpEnabled) return;
 
   // Recompute start position when vents change
   const ventKey = sim ? JSON.stringify(sim.vents) : '';
@@ -213,10 +247,8 @@ export function updateCamera(sim) {
 
   const dt = fpClock.getDelta();
 
-  // Forward vector on XZ plane (ignoring pitch)
   const forwardX = -Math.sin(fpYaw);
   const forwardZ = -Math.cos(fpYaw);
-  // Right (strafe) vector
   const rightX = Math.cos(fpYaw);
   const rightZ = -Math.sin(fpYaw);
 
@@ -226,7 +258,6 @@ export function updateCamera(sim) {
   if (keysPressed.has('ArrowLeft'))  { moveX -= rightX;   moveZ -= rightZ;   }
   if (keysPressed.has('ArrowRight')) { moveX += rightX;   moveZ += rightZ;   }
 
-  // Normalize diagonal movement
   const moveLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
   if (moveLen > 0) {
     moveX = (moveX / moveLen) * MOVE_SPEED * dt;
@@ -235,12 +266,10 @@ export function updateCamera(sim) {
     let newX = fpPosition.x + moveX;
     let newZ = fpPosition.z + moveZ;
 
-    // Wall collision
     const resolved = resolveCollision(newX, newZ, fpPosition.x, fpPosition.z, sim);
     newX = resolved.x;
     newZ = resolved.z;
 
-    // Soft bounds (don't wander too far outside)
     newX = Math.max(-BOUNDS_MARGIN, Math.min(ROOM_W + BOUNDS_MARGIN, newX));
     newZ = Math.max(-BOUNDS_MARGIN, Math.min(ROOM_D + BOUNDS_MARGIN, newZ));
 
@@ -248,29 +277,20 @@ export function updateCamera(sim) {
     fpPosition.z = newZ;
   }
 
-  // Always at eye height
   fpPosition.y = EYE_HEIGHT;
 
-  // Apply camera transform
   camera.position.copy(fpPosition);
 
-  // Look-at target from yaw + pitch
   const lookX = fpPosition.x + forwardX * Math.cos(fpPitch);
   const lookY = fpPosition.y + Math.sin(fpPitch);
   const lookZ = fpPosition.z + forwardZ * Math.cos(fpPitch);
   camera.lookAt(lookX, lookY, lookZ);
 }
 
-/**
- * Reposition camera outside the first door (called when doors change).
- */
 export function resetToStart(sim) {
   computeStartPosition(sim);
 }
 
-/**
- * Return player position {x, y, z} for spray distance calculations.
- */
 export function getPlayerPosition() {
   if (!fpPosition) return { x: 0, y: EYE_HEIGHT, z: 0 };
   return { x: fpPosition.x, y: fpPosition.y, z: fpPosition.z };

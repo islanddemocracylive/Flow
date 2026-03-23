@@ -6,7 +6,7 @@ import { listScenarios, saveScenario, loadScenario, deleteScenario } from './sce
 
 const canvas = document.getElementById('simulation-canvas');
 
-export function setupAdminPanel(sim, state, net, { onPlay } = {}) {
+export function setupAdminPanel(sim, state, net) {
   // ── Design mode buttons ────────────────────────────────
 
   const btnModeStart = document.getElementById('btn-mode-start');
@@ -129,12 +129,7 @@ export function setupAdminPanel(sim, state, net, { onPlay } = {}) {
   }
 
   if (btnPlay) btnPlay.addEventListener('click', () => {
-    // Validate: need at least one door and one start location
-    const doors = sim.vents.filter(v => v.type === 'door');
-    if (doors.length === 0) {
-      alert('Place at least one door before playing.');
-      return;
-    }
+    // Validate: need at least one fire start location
     if (sim.startLocations.size === 0) {
       alert('Place at least one fire start location before playing.');
       return;
@@ -145,10 +140,6 @@ export function setupAdminPanel(sim, state, net, { onPlay } = {}) {
     state.playing = true;
     state.paused = false;
     updatePlayStopButtons();
-    if (onPlay) onPlay();
-    // Switch to 3D view
-    const tab3d = document.querySelector('[data-view="3d"]');
-    if (tab3d) tab3d.click();
   });
 
   if (btnStop) btnStop.addEventListener('click', () => {

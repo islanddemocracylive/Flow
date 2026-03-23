@@ -10,7 +10,7 @@
   <div id="app">
     <header>
       <h1>Fire Training Simulator</h1>
-      <p class="subtitle">Design room scenarios in 2D, then play them in the 3D firefighter view. Right-click to spray water in 3D.</p>
+      <p class="subtitle">Design room scenarios in 2D or 3D, then play them to watch fire spread. Open the Viewer for the firefighter experience.</p>
     </header>
 
     <div id="mobile-stats" class="mobile-stats" style="display:none;">
@@ -20,20 +20,15 @@
     <div id="main-container">
       <div id="view-area">
         <div id="view-tabs">
-          <button class="view-tab active" data-view="2d">2D Room Design</button>
-          <button class="view-tab" data-view="3d">3D Firefighter View</button>
+          <button class="view-tab active" data-view="2d">2D</button>
+          <button class="view-tab" data-view="3d">3D</button>
+          <a id="open-viewer-link" class="view-tab viewer-link" href="viewer.html" target="_blank">Open Viewer &#8599;</a>
         </div>
         <div id="view-2d" class="view-panel active">
           <canvas id="simulation-canvas"></canvas>
         </div>
         <div id="view-3d" class="view-panel">
           <div id="room3d-container"></div>
-          <div id="dpad" class="dpad">
-            <button id="dpad-up" class="dpad-btn dpad-up" aria-label="Move forward">&#9650;</button>
-            <button id="dpad-left" class="dpad-btn dpad-left" aria-label="Strafe left">&#9664;</button>
-            <button id="dpad-down" class="dpad-btn dpad-down" aria-label="Move backward">&#9660;</button>
-            <button id="dpad-right" class="dpad-btn dpad-right" aria-label="Strafe right">&#9654;</button>
-          </div>
         </div>
       </div>
 
@@ -61,7 +56,7 @@
         <!-- Design modes -->
         <div class="control-group">
           <h3>Room Design</h3>
-          <p class="control-hint">Select a mode, then click the 2D grid to add/remove</p>
+          <p class="control-hint">Select a mode, then click the 2D grid or 3D view to add/remove</p>
           <div class="button-row placement-row">
             <button id="btn-mode-start" class="placement-btn" title="Click to toggle fire start locations">Fire Starts</button>
             <button id="btn-mode-vent" class="placement-btn" title="Click to toggle ceiling vents (holes)">Ceiling Vents</button>
@@ -151,6 +146,7 @@
   <button id="toggle-panel-btn" aria-label="Toggle controls">&#9881;</button>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

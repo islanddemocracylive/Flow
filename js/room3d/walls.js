@@ -7,7 +7,7 @@ import { wallMat, edgeMat, cornerMat, doorFrameMat } from './materials.js';
 import { scene } from './scene.js';
 
 // Wall group – rebuilt when doors change
-const wallGroup = new THREE.Group();
+export const wallGroup = new THREE.Group();
 if (scene) scene.add(wallGroup);
 
 export function buildWalls(sim) {

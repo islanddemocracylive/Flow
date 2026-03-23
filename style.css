@@ -79,6 +79,18 @@ header h1 {
   border-bottom-color: #ff6b35;
 }
 
+.view-tab.viewer-link {
+  margin-left: auto;
+  text-decoration: none;
+  color: #6cb4ee;
+  font-size: 0.8rem;
+}
+
+.view-tab.viewer-link:hover {
+  color: #9dd4ff;
+  background: rgba(255, 255, 255, 0.03);
+}
+
 .view-panel {
   display: none;
   flex: 1;
