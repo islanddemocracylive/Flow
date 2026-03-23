@@ -11,6 +11,7 @@ import { container, scene, camera, renderer, fireLight } from './scene.js';
 import { buildWalls } from './walls.js';
 import { panelMeshes } from './ceiling.js';
 import { buildVentMeshes } from './vents.js';
+import { buildObstacleMeshes } from './obstacles.js';
 import { arrowMeshes } from './arrows.js';
 import { raycastCeiling, showWaterSpray, hideWaterSpray } from './raycaster.js';
 import { updateCamera, resetToStart } from './fpCamera.js';
@@ -35,6 +36,9 @@ const room3d = {
       buildVentMeshes(sim);
       buildWalls(sim);
     }
+
+    // Always rebuild obstacles (uses internal change detection)
+    buildObstacleMeshes(sim);
 
     let totalGlow = 0;
 

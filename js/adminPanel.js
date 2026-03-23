@@ -1,55 +1,174 @@
 /**
- * Admin panel: placement mode buttons, sliders, pause/reset, mobile layout.
+ * Admin panel: design modes, scenario management, sliders, play/stop, mobile layout.
  */
+
+import { listScenarios, saveScenario, loadScenario, deleteScenario } from './scenario.js';
 
 const canvas = document.getElementById('simulation-canvas');
 
-export function setupAdminPanel(sim, state, net) {
-  // Vent placement buttons
-  const btnPlaceVent = document.getElementById('btn-place-vent');
-  const btnPlaceDoorFar = document.getElementById('btn-place-door-far');
-  const btnPlaceDoorLeft = document.getElementById('btn-place-door-left');
-  const btnClearVents = document.getElementById('btn-clear-vents');
+export function setupAdminPanel(sim, state, net, { onPlay } = {}) {
+  // ── Design mode buttons ────────────────────────────────
 
-  function setPlacementMode(mode) {
-    if (state.placementMode === mode) {
-      state.placementMode = null;
+  const btnModeStart = document.getElementById('btn-mode-start');
+  const btnModeVent = document.getElementById('btn-mode-vent');
+  const btnModeDoor = document.getElementById('btn-mode-door');
+  const btnModeObstacle = document.getElementById('btn-mode-obstacle');
+  const btnClearAll = document.getElementById('btn-clear-all');
+
+  const modeButtons = {
+    'start-location': btnModeStart,
+    'ceiling-vent': btnModeVent,
+    'door': btnModeDoor,
+    'obstacle': btnModeObstacle,
+  };
+
+  function setDesignMode(mode) {
+    if (state.designMode === mode) {
+      state.designMode = null;
     } else {
-      state.placementMode = mode;
+      state.designMode = mode;
     }
-    if (btnPlaceVent) btnPlaceVent.classList.toggle('active', state.placementMode === 'ceiling-vent');
-    if (btnPlaceDoorFar) btnPlaceDoorFar.classList.toggle('active', state.placementMode === 'door-far');
-    if (btnPlaceDoorLeft) btnPlaceDoorLeft.classList.toggle('active', state.placementMode === 'door-left');
-    if (canvas) canvas.style.cursor = state.placementMode ? 'cell' : 'crosshair';
+    // Update button active states
+    for (const [m, btn] of Object.entries(modeButtons)) {
+      if (btn) btn.classList.toggle('active', state.designMode === m);
+    }
+    if (canvas) canvas.style.cursor = state.designMode ? 'cell' : 'default';
   }
 
-  if (btnPlaceVent) btnPlaceVent.addEventListener('click', () => setPlacementMode('ceiling-vent'));
-  if (btnPlaceDoorFar) btnPlaceDoorFar.addEventListener('click', () => setPlacementMode('door-far'));
-  if (btnPlaceDoorLeft) btnPlaceDoorLeft.addEventListener('click', () => setPlacementMode('door-left'));
-  if (btnClearVents) btnClearVents.addEventListener('click', () => {
+  if (btnModeStart) btnModeStart.addEventListener('click', () => setDesignMode('start-location'));
+  if (btnModeVent) btnModeVent.addEventListener('click', () => setDesignMode('ceiling-vent'));
+  if (btnModeDoor) btnModeDoor.addEventListener('click', () => setDesignMode('door'));
+  if (btnModeObstacle) btnModeObstacle.addEventListener('click', () => setDesignMode('obstacle'));
+
+  if (btnClearAll) btnClearAll.addEventListener('click', () => {
     sim.clearVents();
-    state.placementMode = null;
-    if (btnPlaceVent) btnPlaceVent.classList.remove('active');
-    if (btnPlaceDoorFar) btnPlaceDoorFar.classList.remove('active');
-    if (btnPlaceDoorLeft) btnPlaceDoorLeft.classList.remove('active');
-    if (canvas) canvas.style.cursor = 'crosshair';
+    sim.obstacles.fill(0);
+    sim.startLocations.clear();
+    sim.reset();
+    state.designMode = null;
+    for (const btn of Object.values(modeButtons)) {
+      if (btn) btn.classList.remove('active');
+    }
+    if (canvas) canvas.style.cursor = 'default';
   });
 
-  // Pause / Reset
-  const btnPause = document.getElementById('btn-pause');
+  // ── Scenario management ─────────────────────────────────
+
+  const scenarioSelect = document.getElementById('scenario-select');
+  const scenarioName = document.getElementById('scenario-name');
+  const btnSave = document.getElementById('btn-save-scenario');
+  const btnLoad = document.getElementById('btn-load-scenario');
+  const btnDelete = document.getElementById('btn-delete-scenario');
+
+  function refreshScenarioList() {
+    if (!scenarioSelect) return;
+    const names = listScenarios();
+    // Preserve current selection if possible
+    const current = scenarioSelect.value;
+    scenarioSelect.innerHTML = '<option value="">— New Scenario —</option>';
+    for (const name of names) {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      scenarioSelect.appendChild(opt);
+    }
+    if (names.includes(current)) {
+      scenarioSelect.value = current;
+    }
+  }
+
+  refreshScenarioList();
+
+  if (scenarioSelect) {
+    scenarioSelect.addEventListener('change', () => {
+      if (scenarioName) scenarioName.value = scenarioSelect.value;
+    });
+  }
+
+  if (btnSave) btnSave.addEventListener('click', () => {
+    const name = scenarioName ? scenarioName.value.trim() : '';
+    if (!name) { alert('Enter a scenario name'); return; }
+    saveScenario(name, sim.toScenarioData());
+    refreshScenarioList();
+    if (scenarioSelect) scenarioSelect.value = name;
+  });
+
+  if (btnLoad) btnLoad.addEventListener('click', () => {
+    const name = scenarioSelect ? scenarioSelect.value : '';
+    if (!name) { alert('Select a scenario to load'); return; }
+    const data = loadScenario(name);
+    if (data) {
+      sim.loadScenarioData(data);
+      if (scenarioName) scenarioName.value = name;
+      // Update sliders to match loaded params
+      syncSliders(sim);
+      state.playing = false;
+      updatePlayStopButtons();
+    }
+  });
+
+  if (btnDelete) btnDelete.addEventListener('click', () => {
+    const name = scenarioSelect ? scenarioSelect.value : '';
+    if (!name) return;
+    if (confirm(`Delete scenario "${name}"?`)) {
+      deleteScenario(name);
+      refreshScenarioList();
+      if (scenarioName) scenarioName.value = '';
+    }
+  });
+
+  // ── Play / Stop ─────────────────────────────────────────
+
+  const btnPlay = document.getElementById('btn-play');
+  const btnStop = document.getElementById('btn-stop');
   const btnReset = document.getElementById('btn-reset');
 
-  btnPause.addEventListener('click', () => {
-    state.paused = !state.paused;
-    btnPause.textContent = state.paused ? 'Resume' : 'Pause';
+  function updatePlayStopButtons() {
+    if (btnPlay) btnPlay.disabled = state.playing;
+    if (btnStop) btnStop.disabled = !state.playing;
+  }
+
+  if (btnPlay) btnPlay.addEventListener('click', () => {
+    // Validate: need at least one door and one start location
+    const doors = sim.vents.filter(v => v.type === 'door');
+    if (doors.length === 0) {
+      alert('Place at least one door before playing.');
+      return;
+    }
+    if (sim.startLocations.size === 0) {
+      alert('Place at least one fire start location before playing.');
+      return;
+    }
+    // Reset fire, then ignite start locations
+    sim.reset();
+    sim.igniteStartLocations();
+    state.playing = true;
+    state.paused = false;
+    updatePlayStopButtons();
+    if (onPlay) onPlay();
+    // Switch to 3D view
+    const tab3d = document.querySelector('[data-view="3d"]');
+    if (tab3d) tab3d.click();
   });
 
-  btnReset.addEventListener('click', () => {
+  if (btnStop) btnStop.addEventListener('click', () => {
+    state.playing = false;
+    state.paused = true;
+    updatePlayStopButtons();
+  });
+
+  if (btnReset) btnReset.addEventListener('click', () => {
     sim.reset();
+    state.playing = false;
+    state.paused = false;
+    updatePlayStopButtons();
     if (net && net.connected) net.sendReset();
   });
 
-  // Sliders
+  updatePlayStopButtons();
+
+  // ── Sliders ─────────────────────────────────────────────
+
   function bindSlider(id, displayId, prop, format) {
     const slider = document.getElementById(id);
     const display = document.getElementById(displayId);
@@ -71,6 +190,23 @@ export function setupAdminPanel(sim, state, net) {
   bindSlider('water-radius', 'water-radius-val', 'waterRadius');
   bindSlider('vent-strength', 'vent-strength-val', 'ventStrength', v => v.toFixed(1));
 
+  function syncSliders(sim) {
+    const pairs = [
+      ['spread-speed', 'spread-speed-val', 'spreadSpeed', null],
+      ['ignition-threshold', 'ignition-threshold-val', 'ignitionThreshold', null],
+      ['max-intensity', 'max-intensity-val', 'maxIntensity', v => v.toFixed(2)],
+      ['water-strength', 'water-strength-val', 'waterStrength', v => v.toFixed(1)],
+      ['water-radius', 'water-radius-val', 'waterRadius', null],
+      ['vent-strength', 'vent-strength-val', 'ventStrength', v => v.toFixed(1)],
+    ];
+    for (const [sliderId, displayId, prop, format] of pairs) {
+      const slider = document.getElementById(sliderId);
+      const display = document.getElementById(displayId);
+      if (slider) slider.value = sim[prop];
+      if (display) display.textContent = format ? format(sim[prop]) : sim[prop];
+    }
+  }
+
   // Grid checkbox
   const checkboxGrid = document.getElementById('show-grid');
   if (checkboxGrid) {
@@ -79,7 +215,8 @@ export function setupAdminPanel(sim, state, net) {
     });
   }
 
-  // Mobile panel toggle
+  // ── Mobile panel toggle ─────────────────────────────────
+
   const togglePanelBtn = document.getElementById('toggle-panel-btn');
   const adminPanel = document.getElementById('admin-panel');
   const mobileStats = document.getElementById('mobile-stats');

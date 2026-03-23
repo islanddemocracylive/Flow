@@ -5,11 +5,16 @@
  * Fire spreads to neighbors based on heat diffusion; water suppresses heat.
  *
  * Vent mechanics model real fire dynamics:
- *   - Ceiling vents allow hot gas to escape (stack/chimney effect)
+ *   - Ceiling vents (holes) allow hot gas to escape (stack/chimney effect)
  *   - Doors allow fresh air intake at floor level
  *   - Airflow creates a directional bias: air enters doors → feeds fire →
  *     hot gas rises → flows along ceiling toward vents → exits
  *   - Fire spreads faster in the direction of airflow (oxygen supply path)
+ *
+ * Obstacles represent furniture/fixtures that block player movement in 3D.
+ * Each obstacle cell has a height (stackable 1ft blocks).
+ *
+ * Fire start locations define where fire ignites when a scenario is played.
  */
 
 export class FireSimulation {
@@ -33,6 +38,12 @@ export class FireSimulation {
 
     // Airflow vector field: (vx, vy) per cell
     this.airflow = new Float32Array(cols * rows * 2);
+
+    // Obstacles: height per cell (0 = no obstacle, 1+ = stacked blocks in feet)
+    this.obstacles = new Uint8Array(cols * rows);
+
+    // Fire start locations: set of grid indices
+    this.startLocations = new Set();
   }
 
   idx(x, y) {
@@ -50,6 +61,8 @@ export class FireSimulation {
     this.heat = new Float32Array(cols * rows);
     this.nextHeat = new Float32Array(cols * rows);
     this.airflow = new Float32Array(cols * rows * 2);
+    this.obstacles = new Uint8Array(cols * rows);
+    this.startLocations = new Set();
   }
 
   ignite(cx, cy, radius = 2) {
@@ -69,6 +82,15 @@ export class FireSimulation {
     }
   }
 
+  /** Ignite all fire start locations (called when playing a scenario) */
+  igniteStartLocations() {
+    for (const i of this.startLocations) {
+      const x = i % this.cols;
+      const y = Math.floor(i / this.cols);
+      this.ignite(x, y, 2);
+    }
+  }
+
   applyWater(cx, cy, dt) {
     const r = this.waterRadius;
     for (let dy = -r; dy <= r; dy++) {
@@ -84,6 +106,46 @@ export class FireSimulation {
         }
       }
     }
+  }
+
+  // ── Start location management ────────────────────────────
+
+  toggleStartLocation(x, y) {
+    const i = this.idx(x, y);
+    if (this.startLocations.has(i)) {
+      this.startLocations.delete(i);
+      return false;
+    } else {
+      this.startLocations.add(i);
+      return true;
+    }
+  }
+
+  isStartLocation(x, y) {
+    return this.startLocations.has(this.idx(x, y));
+  }
+
+  // ── Obstacle management ──────────────────────────────────
+
+  addObstacleBlock(x, y) {
+    if (x < 0 || x >= this.cols || y < 0 || y >= this.rows) return;
+    const i = this.idx(x, y);
+    if (this.obstacles[i] < 8) { // max 8ft high (room height)
+      this.obstacles[i]++;
+    }
+  }
+
+  removeObstacleBlock(x, y) {
+    if (x < 0 || x >= this.cols || y < 0 || y >= this.rows) return;
+    const i = this.idx(x, y);
+    if (this.obstacles[i] > 0) {
+      this.obstacles[i]--;
+    }
+  }
+
+  getObstacleHeight(x, y) {
+    if (x < 0 || x >= this.cols || y < 0 || y >= this.rows) return 0;
+    return this.obstacles[this.idx(x, y)];
   }
 
   // ── Vent management ─────────────────────────────────────
@@ -301,5 +363,40 @@ export class FireSimulation {
       coverage: burning / total,
       avgIntensity: burning > 0 ? totalHeat / burning : 0,
     };
+  }
+
+  // ── Scenario serialization ──────────────────────────────
+
+  /** Export the room design (not live heat state) */
+  toScenarioData() {
+    return {
+      vents: [...this.vents],
+      obstacles: Array.from(this.obstacles),
+      startLocations: Array.from(this.startLocations),
+      params: {
+        spreadSpeed: this.spreadSpeed,
+        ignitionThreshold: this.ignitionThreshold,
+        maxIntensity: this.maxIntensity,
+        waterStrength: this.waterStrength,
+        waterRadius: this.waterRadius,
+        ventStrength: this.ventStrength,
+      },
+    };
+  }
+
+  /** Load a scenario design */
+  loadScenarioData(data) {
+    this.reset();
+    this.vents = data.vents ? [...data.vents] : [];
+    this.obstacles = data.obstacles
+      ? new Uint8Array(data.obstacles)
+      : new Uint8Array(this.cols * this.rows);
+    this.startLocations = data.startLocations
+      ? new Set(data.startLocations)
+      : new Set();
+    if (data.params) {
+      Object.assign(this, data.params);
+    }
+    this.recalcAirflow();
   }
 }

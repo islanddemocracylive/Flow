@@ -1,5 +1,9 @@
 /**
  * Main app controller – orchestrates simulation, rendering, input, and networking.
+ *
+ * The app has two modes:
+ *   1. Design mode (2D view): Admin designs room scenarios
+ *   2. Play mode (3D view): Firefighter trains with water spray
  */
 
 import { GRID_COLS, GRID_ROWS, DRAG_THRESHOLD } from './constants.js';
@@ -9,7 +13,6 @@ import { render2D, resizeCanvas, canvasToGrid } from './render2d.js';
 import { setupInput2D } from './input2d.js';
 import { setupInput3D } from './input3d.js';
 import { setupAdminPanel, updateStats } from './adminPanel.js';
-import { setupShareModal } from './shareModal.js';
 import room3d from './room3d/index.js';
 
 // ── Simulation ────────────────────────────────────────────
@@ -26,34 +29,47 @@ try { net = new SimNetwork('controller'); } catch (e) { /* no server */ }
 // ── Shared mutable state ──────────────────────────────────
 const state = {
   paused: false,
+  playing: false,      // true when scenario is actively running
   showGrid: true,
-  mouseDown: false,
-  mouseX: -1,
-  mouseY: -1,
-  mouseDownX: 0,
-  mouseDownY: 0,
-  dragDistance: 0,
   activeView: '2d',
-  placementMode: null,
+  designMode: null,    // 'start-location' | 'ceiling-vent' | 'door' | 'obstacle' | null
   // 3D input state (set by input3d.js)
   mouse3dDown: false,
   mouseX3d: 0,
   mouseY3d: 0,
   dragDistance3d: 0,
-  // Constants exposed for render2d
   DRAG_THRESHOLD,
 };
 
-// ── Placement handler ─────────────────────────────────────
-function handlePlacement(gx, gy) {
+// ── Design click handler (2D view) ───────────────────────
+function handleDesignClick(gx, gy) {
   if (gx < 0 || gx >= sim.cols || gy < 0 || gy >= sim.rows) return;
 
-  if (state.placementMode === 'ceiling-vent') {
-    sim.toggleVent(gx, gy, 'ceiling');
-  } else if (state.placementMode === 'door-far') {
-    if (gy === 0) sim.toggleVent(gx, 0, 'door', 'far');
-  } else if (state.placementMode === 'door-left') {
-    if (gx === 0) sim.toggleVent(0, gy, 'door', 'left');
+  switch (state.designMode) {
+    case 'start-location':
+      sim.toggleStartLocation(gx, gy);
+      break;
+
+    case 'ceiling-vent':
+      sim.toggleVent(gx, gy, 'ceiling');
+      break;
+
+    case 'door': {
+      // Doors can only go on wall edges
+      let wall = null;
+      if (gy === 0) wall = 'far';
+      else if (gy === sim.rows - 1) wall = 'back';
+      else if (gx === 0) wall = 'left';
+      else if (gx === sim.cols - 1) wall = 'right';
+      if (wall) {
+        sim.toggleVent(gx, gy, 'door', wall);
+      }
+      break;
+    }
+
+    case 'obstacle':
+      sim.addObstacleBlock(gx, gy);
+      break;
   }
 }
 
@@ -91,10 +107,13 @@ window.addEventListener('resize', () => {
 resizeCanvas();
 
 // ── Setup input + UI ──────────────────────────────────────
-setupInput2D(sim, state, handlePlacement);
+setupInput2D(sim, state, handleDesignClick);
 setupInput3D(sim, state, room3d);
-setupAdminPanel(sim, state, net);
-setupShareModal();
+setupAdminPanel(sim, state, net, {
+  onPlay: () => {
+    if (room3d.available) room3d.resetToStart(sim);
+  },
+});
 
 // ── Main loop ─────────────────────────────────────────────
 let lastTime = performance.now();
@@ -104,14 +123,8 @@ function loop(now) {
   const elapsed = (now - lastTime) / 1000;
   lastTime = now;
 
-  if (!state.paused) {
-    // Apply water while mouse is being dragged (2D view)
-    if (state.mouseDown && state.dragDistance > DRAG_THRESHOLD && state.activeView === '2d' && !state.placementMode) {
-      const grid = canvasToGrid(state.mouseX, state.mouseY, sim);
-      sim.applyWater(grid.x, grid.y, FIXED_DT);
-    }
-
-    // Apply water while dragging in 3D view (water-only — no placement/ignition in 3D)
+  if (state.playing && !state.paused) {
+    // Apply water while dragging in 3D view
     if (state.mouse3dDown && state.dragDistance3d > DRAG_THRESHOLD && state.activeView === '3d' && room3d.available) {
       const hit = room3d.raycastCeiling(state.mouseX3d, state.mouseY3d);
       if (hit) {

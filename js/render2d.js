@@ -1,6 +1,13 @@
 /**
- * 2D canvas rendering – draws the fire grid, vents, doors, airflow arrows,
- * water cursor, grid lines, and placement mode overlay.
+ * 2D canvas rendering – draws the room design grid:
+ *   - Fire start locations (red squares)
+ *   - Ceiling vents (white squares – holes in ceiling)
+ *   - Doors (brown squares on wall edges)
+ *   - Obstacles (gray blocks with height number)
+ *   - Heat overlay when simulation is running
+ *   - Airflow arrows
+ *   - Grid lines
+ *   - Design mode indicator
  */
 
 import { heatToRGB } from './colorUtils.js';
@@ -47,49 +54,81 @@ export function render2D(sim, state) {
   ctx.fillStyle = '#111';
   ctx.fillRect(0, 0, w, h);
 
-  // Draw each panel
+  // Draw each cell
   for (let gy = 0; gy < sim.rows; gy++) {
     for (let gx = 0; gx < sim.cols; gx++) {
       const heat = sim.heat[sim.idx(gx, gy)];
       const isVent = sim.isCeilingVent(gx, gy);
       const isDoor = sim.vents.some(v => v.type === 'door' && v.x === gx && v.y === gy);
-
-      let r, g, b;
-      if (isVent) {
-        r = 8; g = 12; b = 20;
-      } else if (isDoor) {
-        r = 60; g = 45; b = 25;
-      } else {
-        ({ r, g, b } = heatToRGB(heat));
-      }
+      const isStart = sim.isStartLocation(gx, gy);
+      const obstacleH = sim.getObstacleHeight(gx, gy);
 
       const px0 = offsetX + Math.floor(gx * cellSize);
       const py0 = offsetY + Math.floor(gy * cellSize);
       const ps = Math.floor(cellSize);
 
+      // Base cell color
+      let r, g, b;
+      if (heat > 0) {
+        ({ r, g, b } = heatToRGB(heat));
+      } else {
+        r = 18; g = 18; b = 26;
+      }
+
       ctx.fillStyle = `rgb(${r},${g},${b})`;
       ctx.fillRect(px0, py0, ps, ps);
 
-      if (isVent) {
-        ctx.strokeStyle = 'rgba(100, 200, 255, 0.8)';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(px0 + 2, py0 + 2, ps - 4, ps - 4);
-        ctx.strokeStyle = 'rgba(100, 200, 255, 0.4)';
+      // Obstacle overlay (gray blocks)
+      if (obstacleH > 0) {
+        const intensity = Math.min(180, 60 + obstacleH * 18);
+        ctx.fillStyle = `rgba(${intensity}, ${intensity}, ${Math.floor(intensity * 0.85)}, 0.8)`;
+        ctx.fillRect(px0 + 1, py0 + 1, ps - 2, ps - 2);
+        ctx.strokeStyle = 'rgba(200, 200, 180, 0.5)';
         ctx.lineWidth = 1;
-        for (let i = 1; i <= 3; i++) {
-          ctx.beginPath();
-          ctx.moveTo(px0 + 4, py0 + i * ps / 4);
-          ctx.lineTo(px0 + ps - 4, py0 + i * ps / 4);
-          ctx.stroke();
+        ctx.strokeRect(px0 + 1, py0 + 1, ps - 2, ps - 2);
+        // Show height number
+        if (cellSize > 16) {
+          ctx.font = `bold ${Math.max(10, cellSize * 0.4)}px monospace`;
+          ctx.fillStyle = '#fff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(obstacleH.toString(), px0 + ps / 2, py0 + ps / 2);
         }
       }
 
-      if (isDoor) {
-        ctx.strokeStyle = 'rgba(200, 160, 80, 0.8)';
+      // Fire start location (bright red)
+      if (isStart) {
+        ctx.fillStyle = 'rgba(255, 40, 20, 0.7)';
+        ctx.fillRect(px0 + 2, py0 + 2, ps - 4, ps - 4);
+        ctx.strokeStyle = 'rgba(255, 80, 40, 0.9)';
         ctx.lineWidth = 2;
         ctx.strokeRect(px0 + 2, py0 + 2, ps - 4, ps - 4);
-        ctx.fillStyle = 'rgba(200, 160, 80, 0.3)';
-        ctx.fillRect(px0 + 3, py0 + 3, ps - 6, ps - 6);
+        // Fire icon
+        if (cellSize > 20) {
+          ctx.font = `${Math.max(12, cellSize * 0.5)}px sans-serif`;
+          ctx.fillStyle = '#fff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('\u2737', px0 + ps / 2, py0 + ps / 2);
+        }
+      }
+
+      // Ceiling vent (white square – represents a hole)
+      if (isVent) {
+        ctx.fillStyle = 'rgba(240, 240, 255, 0.85)';
+        ctx.fillRect(px0 + 2, py0 + 2, ps - 4, ps - 4);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(px0 + 2, py0 + 2, ps - 4, ps - 4);
+      }
+
+      // Door (brown with frame)
+      if (isDoor) {
+        ctx.fillStyle = 'rgba(160, 120, 60, 0.8)';
+        ctx.fillRect(px0 + 2, py0 + 2, ps - 4, ps - 4);
+        ctx.strokeStyle = 'rgba(200, 160, 80, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(px0 + 2, py0 + 2, ps - 4, ps - 4);
       }
     }
   }
@@ -150,54 +189,58 @@ export function render2D(sim, state) {
     }
   }
 
-  // Panel labels
-  if (cellSize > 30) {
-    ctx.font = '10px monospace';
-    ctx.fillStyle = 'rgba(255,255,255,0.25)';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+  // Wall edge indicators (highlight which cells are wall-adjacent for door placement)
+  if (state.designMode === 'door') {
+    ctx.strokeStyle = 'rgba(200, 160, 80, 0.3)';
+    ctx.lineWidth = 2;
+    // Top row (far wall)
+    for (let gx = 0; gx < sim.cols; gx++) {
+      const px0 = offsetX + Math.floor(gx * cellSize);
+      const py0 = offsetY;
+      ctx.strokeRect(px0 + 1, py0 + 1, Math.floor(cellSize) - 2, Math.floor(cellSize) - 2);
+    }
+    // Bottom row (back wall)
+    for (let gx = 0; gx < sim.cols; gx++) {
+      const px0 = offsetX + Math.floor(gx * cellSize);
+      const py0 = offsetY + Math.floor((sim.rows - 1) * cellSize);
+      ctx.strokeRect(px0 + 1, py0 + 1, Math.floor(cellSize) - 2, Math.floor(cellSize) - 2);
+    }
+    // Left column (left wall)
     for (let gy = 0; gy < sim.rows; gy++) {
-      for (let gx = 0; gx < sim.cols; gx++) {
-        const cx = offsetX + (gx + 0.5) * cellSize;
-        const cy = offsetY + (gy + 0.5) * cellSize;
-        ctx.fillText(`${gx},${gy}`, cx, cy);
+      const px0 = offsetX;
+      const py0 = offsetY + Math.floor(gy * cellSize);
+      ctx.strokeRect(px0 + 1, py0 + 1, Math.floor(cellSize) - 2, Math.floor(cellSize) - 2);
+    }
+    // Right column (right wall)
+    for (let gx = sim.cols - 1; gx === sim.cols - 1; gx++) {
+      for (let gy = 0; gy < sim.rows; gy++) {
+        const px0 = offsetX + Math.floor(gx * cellSize);
+        const py0 = offsetY + Math.floor(gy * cellSize);
+        ctx.strokeRect(px0 + 1, py0 + 1, Math.floor(cellSize) - 2, Math.floor(cellSize) - 2);
       }
     }
   }
 
-  // Water cursor
-  if (state.mouseDown && state.dragDistance > state.DRAG_THRESHOLD && state.mouseX >= 0 && state.mouseY >= 0) {
-    const rect = canvas.getBoundingClientRect();
-    const px = state.mouseX - rect.left;
-    const py = state.mouseY - rect.top;
-    const radiusPx = sim.waterRadius * cellSize;
-    ctx.strokeStyle = 'rgba(100, 180, 255, 0.6)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(px, py, radiusPx, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.fillStyle = 'rgba(100, 180, 255, 0.3)';
-    for (let i = 0; i < 8; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const dist = Math.random() * radiusPx;
-      ctx.beginPath();
-      ctx.arc(px + Math.cos(angle) * dist, py + Math.sin(angle) * dist, 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  // Placement mode indicator
-  if (state.placementMode) {
-    ctx.fillStyle = 'rgba(100, 200, 255, 0.15)';
+  // Design mode indicator
+  if (state.designMode) {
+    const labels = {
+      'start-location': 'Click to toggle fire start locations',
+      'ceiling-vent': 'Click to toggle ceiling vents (holes)',
+      'door': 'Click wall-edge cells to toggle doors',
+      'obstacle': 'Click to add obstacle blocks (right-click to remove)',
+    };
+    const colors = {
+      'start-location': 'rgba(255, 60, 40, 0.15)',
+      'ceiling-vent': 'rgba(240, 240, 255, 0.1)',
+      'door': 'rgba(200, 160, 80, 0.1)',
+      'obstacle': 'rgba(150, 150, 140, 0.1)',
+    };
+    ctx.fillStyle = colors[state.designMode] || 'rgba(100, 200, 255, 0.15)';
     ctx.fillRect(offsetX, offsetY, gridW, gridH);
     ctx.font = '14px sans-serif';
-    ctx.fillStyle = 'rgba(100, 200, 255, 0.7)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    const label = state.placementMode === 'ceiling-vent' ? 'Click to toggle ceiling vent' :
-      state.placementMode === 'door-far' ? 'Click top row to place door (far wall)' :
-      'Click left column to place door (left wall)';
-    ctx.fillText(label, offsetX + gridW / 2, offsetY + 6);
+    ctx.fillText(labels[state.designMode] || '', offsetX + gridW / 2, offsetY + 6);
   }
 }

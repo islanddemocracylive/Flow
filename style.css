@@ -158,6 +158,47 @@ header h1 {
 .dpad-left  { top: 50%; left: 0;   transform: translateY(-50%); }
 .dpad-right { top: 50%; right: 0;  transform: translateY(-50%); }
 
+/* ── Scenario management ───────────────────────────────── */
+.scenario-row select {
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.scenario-name-row {
+  margin-bottom: 2px;
+}
+
+.scenario-name-input {
+  width: 100%;
+  background: #0f3460;
+  color: #e0e0e0;
+  border: 1px solid #1a3a6e;
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.scenario-name-input:focus {
+  border-color: #ff6b35;
+}
+
+.play-btn {
+  background: #1a6a2e !important;
+  border-color: #2a8a3e !important;
+  color: #fff !important;
+  font-size: 0.9rem !important;
+}
+
+.play-btn:hover {
+  background: #2a8a3e !important;
+}
+
+.play-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── Admin Panel ───────────────────────────────────────── */
 #admin-panel {
   width: 260px;
