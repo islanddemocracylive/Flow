@@ -1,10 +1,12 @@
 /**
- * 3D view input handling: mouse and touch events for water spray.
+ * 3D view input handling: water spray only.
+ *
+ * The 3D view is the firefighter training view — the only interaction
+ * is spraying water. Fire ignition, object/vent placement, and all
+ * admin functions are done from the 2D control view.
  *
  * Right-click+drag = water spray via raycasting
- * Right-click (short) = ignite fire / place object
  * Mobile 2-finger drag = water spray
- * Mobile 2-finger tap = ignite fire / place object
  *
  * Left-click and 1-finger touch are handled by fpCamera for looking around.
  */
@@ -13,7 +15,7 @@ import { DRAG_THRESHOLD } from './constants.js';
 
 const room3dContainer = document.getElementById('room3d-container');
 
-export function setupInput3D(sim, state, room3d, handlePlacement) {
+export function setupInput3D(sim, state, room3d) {
   if (!room3dContainer) return;
 
   // ── Right-click water spray (mouse) ──────────────────────
@@ -59,17 +61,6 @@ export function setupInput3D(sim, state, room3d, handlePlacement) {
 
   room3dContainer.addEventListener('mouseup', (e) => {
     if (e.button !== 2) return;
-    if (dragDistance3d <= DRAG_THRESHOLD && room3d.available) {
-      // Short right-click = fire ignition or placement
-      const hit = room3d.raycastCeiling(e.clientX, e.clientY);
-      if (hit) {
-        if (state.placementMode) {
-          handlePlacement(hit.gridX, hit.gridY);
-        } else {
-          sim.ignite(hit.gridX, hit.gridY, 2);
-        }
-      }
-    }
     mouse3dDown = false;
     dragDistance3d = 0;
     state.mouse3dDown = false;
@@ -88,9 +79,6 @@ export function setupInput3D(sim, state, room3d, handlePlacement) {
   // ── 2-finger water spray (touch) ────────────────────────
 
   let touch2fActive = false;
-  let touch2fStartMidX = 0;
-  let touch2fStartMidY = 0;
-  let touch2fDragDist = 0;
   let touch2fMidX = 0;
   let touch2fMidY = 0;
 
@@ -100,13 +88,11 @@ export function setupInput3D(sim, state, room3d, handlePlacement) {
       touch2fActive = true;
       touch2fMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
       touch2fMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      touch2fStartMidX = touch2fMidX;
-      touch2fStartMidY = touch2fMidY;
-      touch2fDragDist = 0;
+      // Start spraying immediately on 2-finger touch
       state.mouse3dDown = true;
       state.mouseX3d = touch2fMidX;
       state.mouseY3d = touch2fMidY;
-      state.dragDistance3d = 0;
+      state.dragDistance3d = DRAG_THRESHOLD + 1; // exceed threshold immediately
     }
   }, { passive: false });
 
@@ -115,31 +101,15 @@ export function setupInput3D(sim, state, room3d, handlePlacement) {
       e.preventDefault();
       touch2fMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
       touch2fMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      const dx = touch2fMidX - touch2fStartMidX;
-      const dy = touch2fMidY - touch2fStartMidY;
-      touch2fDragDist = Math.sqrt(dx * dx + dy * dy);
       state.mouseX3d = touch2fMidX;
       state.mouseY3d = touch2fMidY;
-      state.dragDistance3d = touch2fDragDist;
+      state.dragDistance3d = DRAG_THRESHOLD + 1;
     }
   }, { passive: false });
 
   room3dContainer.addEventListener('touchend', (e) => {
     if (touch2fActive && e.touches.length < 2) {
-      // Gesture ended
-      if (touch2fDragDist <= DRAG_THRESHOLD && room3d.available) {
-        // Short 2-finger tap = fire ignition or placement
-        const hit = room3d.raycastCeiling(touch2fMidX, touch2fMidY);
-        if (hit) {
-          if (state.placementMode) {
-            handlePlacement(hit.gridX, hit.gridY);
-          } else {
-            sim.ignite(hit.gridX, hit.gridY, 2);
-          }
-        }
-      }
       touch2fActive = false;
-      touch2fDragDist = 0;
       state.mouse3dDown = false;
       state.dragDistance3d = 0;
       room3d.hideWaterSpray();

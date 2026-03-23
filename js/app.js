@@ -92,7 +92,7 @@ resizeCanvas();
 
 // ── Setup input + UI ──────────────────────────────────────
 setupInput2D(sim, state, handlePlacement);
-setupInput3D(sim, state, room3d, handlePlacement);
+setupInput3D(sim, state, room3d);
 setupAdminPanel(sim, state, net);
 setupShareModal();
 
@@ -111,8 +111,8 @@ function loop(now) {
       sim.applyWater(grid.x, grid.y, FIXED_DT);
     }
 
-    // Apply water while dragging in 3D view
-    if (state.mouse3dDown && state.dragDistance3d > DRAG_THRESHOLD && state.activeView === '3d' && !state.placementMode && room3d.available) {
+    // Apply water while dragging in 3D view (water-only — no placement/ignition in 3D)
+    if (state.mouse3dDown && state.dragDistance3d > DRAG_THRESHOLD && state.activeView === '3d' && room3d.available) {
       const hit = room3d.raycastCeiling(state.mouseX3d, state.mouseY3d);
       if (hit) {
         sim.applyWater(hit.gridX, hit.gridY, FIXED_DT);
