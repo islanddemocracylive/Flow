@@ -12,7 +12,6 @@ import { buildWalls } from './walls.js';
 import { panelMeshes } from './ceiling.js';
 import { buildVentMeshes } from './vents.js';
 import { buildObstacleMeshes } from './obstacles.js';
-import { arrowMeshes } from './arrows.js';
 import { raycastCeiling, showWaterSpray, hideWaterSpray } from './raycaster.js';
 import { updateCamera, resetToStart } from './fpCamera.js';
 
@@ -60,27 +59,6 @@ const room3d = {
       totalGlow += heat;
     }
 
-    // Update airflow arrows
-    if (sim.vents.length > 0) {
-      for (const arrow of arrowMeshes) {
-        const af = sim.getAirflow(arrow.col, arrow.row);
-        const mag = Math.sqrt(af.vx * af.vx + af.vy * af.vy);
-
-        if (mag > 0.02) {
-          const angle = Math.atan2(-af.vx, -af.vy);
-          arrow.mesh.rotation.x = -Math.PI / 2;
-          arrow.mesh.rotation.y = 0;
-          arrow.mesh.rotation.z = angle;
-          arrow.mesh.material.opacity = Math.min(0.6, mag * 0.8);
-        } else {
-          arrow.mesh.material.opacity = 0;
-        }
-      }
-    } else {
-      for (const arrow of arrowMeshes) {
-        arrow.mesh.material.opacity = 0;
-      }
-    }
 
     // Update dynamic fire light
     if (fireLight) {

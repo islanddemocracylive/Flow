@@ -11,7 +11,7 @@ import { ROOM_W, ROOM_D, ROOM_H } from '../constants.js';
 import { camera, renderer } from './scene.js';
 import { resolveCollision } from './collision.js';
 
-const EYE_HEIGHT = 6;
+const EYE_HEIGHT = 5.5;
 const MOVE_SPEED = 5;           // ft/sec
 const LOOK_SENSITIVITY = 0.003; // radians/pixel
 const PITCH_LIMIT = Math.PI / 3; // 60° up/down
@@ -79,8 +79,8 @@ if (renderer) {
     const dy = e.clientY - lookLastY;
     lookLastX = e.clientX;
     lookLastY = e.clientY;
-    fpYaw += dx * LOOK_SENSITIVITY;
-    fpPitch += dy * LOOK_SENSITIVITY;
+    fpYaw -= dx * LOOK_SENSITIVITY;
+    fpPitch -= dy * LOOK_SENSITIVITY;
     fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
   });
 

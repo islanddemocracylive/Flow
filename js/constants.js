@@ -16,4 +16,4 @@ export const DRAG_THRESHOLD = 5; // pixels – movement beyond this = drag (wate
 
 // Door geometry
 export const DOOR_W = 3;   // door width in feet
-export const DOOR_H = 6.5; // door height in feet
+export const DOOR_H = 6.67; // door height in feet (standard 6'8")
