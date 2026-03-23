@@ -26,6 +26,45 @@ export function buildWalls(sim) {
   buildWallWithDoors('back', ROOM_W, ROOM_H, { px: ROOM_W / 2, py: ROOM_H / 2, pz: ROOM_D, ry: Math.PI }, doors);
 }
 
+/**
+ * Compute the door's world-space position from its grid coords.
+ * Grid (x, y) maps to world (x + 0.5, z = y + 0.5).
+ */
+function doorWorldPos(door, wallName) {
+  if (wallName === 'far' || wallName === 'back') return door.x + 0.5;
+  return door.y + 0.5;
+}
+
+/**
+ * Convert a world-space door position to the Shape's local X coordinate.
+ *
+ * The Shape is centered at transform.px (or pz) and then rotated by transform.ry.
+ * THREE.js rotation around Y maps local X → world offset by cos(ry) on X and -sin(ry) on Z.
+ * We invert this to find the localX that produces the desired world position.
+ *
+ *   far  (ry=0):     world X offset = +localX   →  localX = worldOffset
+ *   back (ry=PI):    world X offset = -localX   →  localX = -worldOffset
+ *   left (ry=PI/2):  world Z offset = -localX   →  localX = -worldOffset
+ *   right(ry=-PI/2): world Z offset = +localX   →  localX = worldOffset
+ */
+function worldToShapeLocalX(worldPos, wallCenter, wallName) {
+  const offset = worldPos - wallCenter;
+  if (wallName === 'back' || wallName === 'left') {
+    return -offset; // rotation flips the axis
+  }
+  return offset;
+}
+
+/**
+ * Convert back from Shape local X to world position (for frame placement).
+ */
+function shapeLocalXToWorld(localX, wallCenter, wallName) {
+  if (wallName === 'back' || wallName === 'left') {
+    return wallCenter - localX;
+  }
+  return wallCenter + localX;
+}
+
 function buildWallWithDoors(wallName, wallWidth, wallHeight, transform, allDoors) {
   const doors = allDoors.filter(d => d.wall === wallName);
 
@@ -44,6 +83,11 @@ function buildWallWithDoors(wallName, wallWidth, wallHeight, transform, allDoors
     return;
   }
 
+  // Wall center along its length axis
+  const wallCenter = (wallName === 'far' || wallName === 'back')
+    ? transform.px   // X-axis center
+    : transform.pz;  // Z-axis center
+
   // Wall with door openings – use shape with holes
   const shape = new THREE.Shape();
   shape.moveTo(-wallWidth / 2, -wallHeight / 2);
@@ -53,12 +97,8 @@ function buildWallWithDoors(wallName, wallWidth, wallHeight, transform, allDoors
   shape.lineTo(-wallWidth / 2, -wallHeight / 2);
 
   for (const door of doors) {
-    let localX;
-    if (wallName === 'far' || wallName === 'back') {
-      localX = door.x - wallWidth / 2 + 0.5;
-    } else {
-      localX = door.y - wallWidth / 2 + 0.5;
-    }
+    const worldP = doorWorldPos(door, wallName);
+    const localX = worldToShapeLocalX(worldP, wallCenter, wallName);
 
     const holeLeft = localX - DOOR_W / 2;
     const holeRight = localX + DOOR_W / 2;
@@ -73,26 +113,30 @@ function buildWallWithDoors(wallName, wallWidth, wallHeight, transform, allDoors
     hole.lineTo(holeLeft, holeBottom);
     shape.holes.push(hole);
 
-    // Door frame
+    // Door frame – positioned in world space directly
     const frameThickness = 0.15;
+    const frameWorldCenter = worldP;
+    const frameWorldLeft = worldP - DOOR_W / 2;
+    const frameWorldRight = worldP + DOOR_W / 2;
+
     const frameParts = [
-      { w: frameThickness, h: DOOR_H, lx: holeLeft - frameThickness / 2, ly: holeBottom + DOOR_H / 2 },
-      { w: frameThickness, h: DOOR_H, lx: holeRight + frameThickness / 2, ly: holeBottom + DOOR_H / 2 },
-      { w: DOOR_W + frameThickness * 2, h: frameThickness, lx: localX, ly: holeTop + frameThickness / 2 },
+      { w: frameThickness, h: DOOR_H, wp: frameWorldLeft - frameThickness / 2, ly: holeBottom + DOOR_H / 2 },
+      { w: frameThickness, h: DOOR_H, wp: frameWorldRight + frameThickness / 2, ly: holeBottom + DOOR_H / 2 },
+      { w: DOOR_W + frameThickness * 2, h: frameThickness, wp: frameWorldCenter, ly: holeTop + frameThickness / 2 },
     ];
     for (const fp of frameParts) {
       const fg = new THREE.PlaneGeometry(fp.w, fp.h);
       const fm = new THREE.Mesh(fg, doorFrameMat);
       if (wallName === 'far') {
-        fm.position.set(transform.px + fp.lx, transform.py + fp.ly, transform.pz + 0.01);
+        fm.position.set(fp.wp, transform.py + fp.ly, transform.pz + 0.01);
       } else if (wallName === 'left') {
-        fm.position.set(transform.px + 0.01, transform.py + fp.ly, transform.pz + fp.lx);
+        fm.position.set(transform.px + 0.01, transform.py + fp.ly, fp.wp);
         fm.rotation.y = Math.PI / 2;
       } else if (wallName === 'right') {
-        fm.position.set(transform.px - 0.01, transform.py + fp.ly, transform.pz + fp.lx);
+        fm.position.set(transform.px - 0.01, transform.py + fp.ly, fp.wp);
         fm.rotation.y = Math.PI / 2;
       } else if (wallName === 'back') {
-        fm.position.set(transform.px + fp.lx, transform.py + fp.ly, transform.pz - 0.01);
+        fm.position.set(fp.wp, transform.py + fp.ly, transform.pz - 0.01);
       }
       wallGroup.add(fm);
     }
