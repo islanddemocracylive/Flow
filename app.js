@@ -348,6 +348,15 @@
         sim.applyWater(grid.x, grid.y, FIXED_DT);
       }
 
+      // Apply water while dragging in 3D view
+      if (mouse3dDown && dragDistance3d > DRAG_THRESHOLD && activeView === '3d' && !placementMode && window.room3d) {
+        const hit = window.room3d.raycastCeiling(mouseX3d, mouseY3d);
+        if (hit) {
+          sim.applyWater(hit.gridX, hit.gridY, FIXED_DT);
+          window.room3d.showWaterSpray(hit.gridX, hit.gridY, sim.waterRadius);
+        }
+      }
+
       sim.step(Math.min(elapsed, 0.05));
     }
 
@@ -468,6 +477,108 @@
     touchDragDist = 0;
     dragDistance = 0;
   });
+
+  // ── 3D view input handling (water spray via raycasting) ────
+  const room3dContainer = document.getElementById('room3d-container');
+  let mouse3dDown = false;
+  let mouseX3d = 0;
+  let mouseY3d = 0;
+  let mouseDownX3d = 0;
+  let mouseDownY3d = 0;
+  let dragDistance3d = 0;
+
+  if (room3dContainer) {
+    room3dContainer.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return; // only left-click
+      mouse3dDown = true;
+      mouseX3d = e.clientX;
+      mouseY3d = e.clientY;
+      mouseDownX3d = e.clientX;
+      mouseDownY3d = e.clientY;
+      dragDistance3d = 0;
+    });
+
+    room3dContainer.addEventListener('mousemove', (e) => {
+      if (!mouse3dDown) return;
+      mouseX3d = e.clientX;
+      mouseY3d = e.clientY;
+      const dx = e.clientX - mouseDownX3d;
+      const dy = e.clientY - mouseDownY3d;
+      dragDistance3d = Math.sqrt(dx * dx + dy * dy);
+    });
+
+    room3dContainer.addEventListener('mouseup', (e) => {
+      if (e.button !== 0) return;
+      if (dragDistance3d <= DRAG_THRESHOLD && window.room3d) {
+        // Short click = fire ignition in 3D
+        const hit = window.room3d.raycastCeiling(e.clientX, e.clientY);
+        if (hit) {
+          if (placementMode) {
+            handlePlacement(hit.gridX, hit.gridY);
+          } else {
+            sim.ignite(hit.gridX, hit.gridY, 2);
+          }
+        }
+      }
+      mouse3dDown = false;
+      dragDistance3d = 0;
+      if (window.room3d) window.room3d.hideWaterSpray();
+    });
+
+    room3dContainer.addEventListener('mouseleave', () => {
+      mouse3dDown = false;
+      dragDistance3d = 0;
+      if (window.room3d) window.room3d.hideWaterSpray();
+    });
+
+    // Touch: 1-finger = spray/tap, 2-finger handled by OrbitControls
+    let touch3dStartX = 0;
+    let touch3dStartY = 0;
+    let touch3dDragDist = 0;
+
+    room3dContainer.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return; // only 1-finger
+      e.preventDefault();
+      const touch = e.touches[0];
+      mouse3dDown = true;
+      mouseX3d = touch.clientX;
+      mouseY3d = touch.clientY;
+      touch3dStartX = touch.clientX;
+      touch3dStartY = touch.clientY;
+      touch3dDragDist = 0;
+      dragDistance3d = 0;
+    });
+
+    room3dContainer.addEventListener('touchmove', (e) => {
+      if (e.touches.length !== 1 || !mouse3dDown) return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      mouseX3d = touch.clientX;
+      mouseY3d = touch.clientY;
+      const dx = touch.clientX - touch3dStartX;
+      const dy = touch.clientY - touch3dStartY;
+      touch3dDragDist = Math.sqrt(dx * dx + dy * dy);
+      dragDistance3d = touch3dDragDist;
+    });
+
+    room3dContainer.addEventListener('touchend', (e) => {
+      if (touch3dDragDist <= DRAG_THRESHOLD && window.room3d) {
+        // Tap = fire ignition in 3D
+        const hit = window.room3d.raycastCeiling(mouseX3d, mouseY3d);
+        if (hit) {
+          if (placementMode) {
+            handlePlacement(hit.gridX, hit.gridY);
+          } else {
+            sim.ignite(hit.gridX, hit.gridY, 2);
+          }
+        }
+      }
+      mouse3dDown = false;
+      touch3dDragDist = 0;
+      dragDistance3d = 0;
+      if (window.room3d) window.room3d.hideWaterSpray();
+    });
+  }
 
   // ── Placement handler ─────────────────────────────────────
   function handlePlacement(gx, gy) {

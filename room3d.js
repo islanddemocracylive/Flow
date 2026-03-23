@@ -41,8 +41,46 @@
     controls.minDistance = 5;
     controls.maxDistance = 50;
     controls.maxPolarAngle = Math.PI * 0.85; // don't go fully below floor
+    // Left-click free for water spray; right-drag = orbit; 2-finger = orbit+zoom
+    controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+    controls.touches = { ONE: null, TWO: THREE.TOUCH.DOLLY_ROTATE };
     controls.update();
   }
+
+  // Suppress right-click context menu on 3D canvas
+  renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+
+  // ── Raycasting (for water spray in 3D) ──────────────────────
+  const raycaster = new THREE.Raycaster();
+  const ndcMouse = new THREE.Vector2();
+  const ceilingPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), ROOM_H);
+  const rayHitPoint = new THREE.Vector3();
+
+  function raycastCeiling(clientX, clientY) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    ndcMouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    ndcMouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(ndcMouse, camera);
+    const hit = raycaster.ray.intersectPlane(ceilingPlane, rayHitPoint);
+    if (hit && hit.x >= 0 && hit.x <= ROOM_W && hit.z >= 0 && hit.z <= ROOM_D) {
+      return { gridX: Math.floor(hit.x), gridY: Math.floor(hit.z) };
+    }
+    return null;
+  }
+
+  // ── Water spray visual indicator ─────────────────────────────
+  const sprayGeo = new THREE.CircleGeometry(1, 32);
+  const sprayMat = new THREE.MeshBasicMaterial({
+    color: 0x44aaff,
+    transparent: true,
+    opacity: 0.4,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const sprayIndicator = new THREE.Mesh(sprayGeo, sprayMat);
+  sprayIndicator.rotation.x = Math.PI / 2; // flat on ceiling
+  sprayIndicator.visible = false;
+  scene.add(sprayIndicator);
 
   // ── Lighting ──────────────────────────────────────────────
   const ambient = new THREE.AmbientLight(0x333344, 0.6);
@@ -61,6 +99,9 @@
   const wallMat = new THREE.MeshLambertMaterial({
     color: 0x3a3a4a,
     side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.35,
+    depthWrite: false,
   });
 
   const floorMat = new THREE.MeshLambertMaterial({
@@ -107,6 +148,10 @@
     buildWallWithDoors('far', ROOM_W, ROOM_H, { px: ROOM_W / 2, py: ROOM_H / 2, pz: 0, ry: 0 }, doors);
     // Left wall (x = 0, facing +x)
     buildWallWithDoors('left', ROOM_D, ROOM_H, { px: 0, py: ROOM_H / 2, pz: ROOM_D / 2, ry: Math.PI / 2 }, doors);
+    // Right wall (x = ROOM_W, facing -x)
+    buildWallWithDoors('right', ROOM_D, ROOM_H, { px: ROOM_W, py: ROOM_H / 2, pz: ROOM_D / 2, ry: -Math.PI / 2 }, doors);
+    // Back wall (z = ROOM_D, facing -z)
+    buildWallWithDoors('back', ROOM_W, ROOM_H, { px: ROOM_W / 2, py: ROOM_H / 2, pz: ROOM_D, ry: Math.PI }, doors);
   }
 
   function buildWallWithDoors(wallName, wallWidth, wallHeight, transform, allDoors) {
@@ -142,9 +187,9 @@
     for (const door of doors) {
       // Convert grid position to local wall coordinate
       let localX;
-      if (wallName === 'far') {
+      if (wallName === 'far' || wallName === 'back') {
         localX = door.x - wallWidth / 2 + 0.5;
-      } else if (wallName === 'left') {
+      } else if (wallName === 'left' || wallName === 'right') {
         localX = door.y - wallWidth / 2 + 0.5;
       } else {
         localX = door.x - wallWidth / 2 + 0.5;
@@ -178,10 +223,15 @@
         const fm = new THREE.Mesh(fg, doorFrameMat);
         // Position relative to wall center, then offset by a tiny amount
         if (wallName === 'far') {
-          fm.position.set(transform.px + fp.lx, transform.py + fp.ly - wallHeight / 2 + wallHeight / 2, transform.pz + 0.01);
+          fm.position.set(transform.px + fp.lx, transform.py + fp.ly, transform.pz + 0.01);
         } else if (wallName === 'left') {
-          fm.position.set(transform.px + 0.01, transform.py + fp.ly - wallHeight / 2 + wallHeight / 2, transform.pz + fp.lx);
+          fm.position.set(transform.px + 0.01, transform.py + fp.ly, transform.pz + fp.lx);
           fm.rotation.y = Math.PI / 2;
+        } else if (wallName === 'right') {
+          fm.position.set(transform.px - 0.01, transform.py + fp.ly, transform.pz + fp.lx);
+          fm.rotation.y = Math.PI / 2;
+        } else if (wallName === 'back') {
+          fm.position.set(transform.px + fp.lx, transform.py + fp.ly, transform.pz - 0.01);
         }
         wallGroup.add(fm);
       }
@@ -224,6 +274,7 @@
   addCornerEdge(0, 0);
   addCornerEdge(ROOM_W, 0);
   addCornerEdge(0, ROOM_D);
+  addCornerEdge(ROOM_W, ROOM_D);
 
   // Ceiling outline edges
   const ceilingOutlineGeo = new THREE.BufferGeometry().setFromPoints([
@@ -499,6 +550,21 @@
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
+    },
+
+    /** Raycast from screen coords to ceiling plane, returns {gridX, gridY} or null */
+    raycastCeiling,
+
+    /** Show blue spray indicator on ceiling at grid position */
+    showWaterSpray(gridX, gridY, radius) {
+      sprayIndicator.position.set(gridX + 0.5, ROOM_H - 0.02, gridY + 0.5);
+      sprayIndicator.scale.set(radius, radius, radius);
+      sprayIndicator.visible = true;
+    },
+
+    /** Hide the spray indicator */
+    hideWaterSpray() {
+      sprayIndicator.visible = false;
     },
   };
 
