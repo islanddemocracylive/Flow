@@ -1,8 +1,12 @@
 /**
  * 3D view input handling: mouse and touch events for water spray.
- * Left-click+drag = water spray via raycasting.
- * Tap / short click = ignite fire.
- * 2-finger touch is handled by fpCamera for looking around.
+ *
+ * Right-click+drag = water spray via raycasting
+ * Right-click (short) = ignite fire / place object
+ * Mobile 2-finger drag = water spray
+ * Mobile 2-finger tap = ignite fire / place object
+ *
+ * Left-click and 1-finger touch are handled by fpCamera for looking around.
  */
 
 import { DRAG_THRESHOLD } from './constants.js';
@@ -11,6 +15,8 @@ const room3dContainer = document.getElementById('room3d-container');
 
 export function setupInput3D(sim, state, room3d, handlePlacement) {
   if (!room3dContainer) return;
+
+  // ── Right-click water spray (mouse) ──────────────────────
 
   let mouse3dDown = false;
   let mouseX3d = 0;
@@ -26,7 +32,7 @@ export function setupInput3D(sim, state, room3d, handlePlacement) {
   state.dragDistance3d = 0;
 
   room3dContainer.addEventListener('mousedown', (e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 2) return; // only right-click
     mouse3dDown = true;
     mouseX3d = e.clientX;
     mouseY3d = e.clientY;
@@ -52,8 +58,9 @@ export function setupInput3D(sim, state, room3d, handlePlacement) {
   });
 
   room3dContainer.addEventListener('mouseup', (e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 2) return;
     if (dragDistance3d <= DRAG_THRESHOLD && room3d.available) {
+      // Short right-click = fire ignition or placement
       const hit = room3d.raycastCeiling(e.clientX, e.clientY);
       if (hit) {
         if (state.placementMode) {
@@ -78,70 +85,64 @@ export function setupInput3D(sim, state, room3d, handlePlacement) {
     room3d.hideWaterSpray();
   });
 
-  // Touch: 1-finger = spray/tap, 2-finger handled by fpCamera
-  let touch3dStartX = 0;
-  let touch3dStartY = 0;
-  let touch3dDragDist = 0;
+  // ── 2-finger water spray (touch) ────────────────────────
+
+  let touch2fActive = false;
+  let touch2fStartMidX = 0;
+  let touch2fStartMidY = 0;
+  let touch2fDragDist = 0;
+  let touch2fMidX = 0;
+  let touch2fMidY = 0;
 
   room3dContainer.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) return;
-    e.preventDefault();
-    const touch = e.touches[0];
-    mouse3dDown = true;
-    mouseX3d = touch.clientX;
-    mouseY3d = touch.clientY;
-    touch3dStartX = touch.clientX;
-    touch3dStartY = touch.clientY;
-    touch3dDragDist = 0;
-    dragDistance3d = 0;
-    state.mouse3dDown = true;
-    state.mouseX3d = touch.clientX;
-    state.mouseY3d = touch.clientY;
-    state.dragDistance3d = 0;
-  });
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      touch2fActive = true;
+      touch2fMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      touch2fMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      touch2fStartMidX = touch2fMidX;
+      touch2fStartMidY = touch2fMidY;
+      touch2fDragDist = 0;
+      state.mouse3dDown = true;
+      state.mouseX3d = touch2fMidX;
+      state.mouseY3d = touch2fMidY;
+      state.dragDistance3d = 0;
+    }
+  }, { passive: false });
 
   room3dContainer.addEventListener('touchmove', (e) => {
-    // Cancel spray if finger count changed to 2
-    if (e.touches.length !== 1) {
-      if (mouse3dDown) {
-        mouse3dDown = false;
-        dragDistance3d = 0;
-        state.mouse3dDown = false;
-        state.dragDistance3d = 0;
-        room3d.hideWaterSpray();
-      }
-      return;
+    if (touch2fActive && e.touches.length >= 2) {
+      e.preventDefault();
+      touch2fMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      touch2fMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const dx = touch2fMidX - touch2fStartMidX;
+      const dy = touch2fMidY - touch2fStartMidY;
+      touch2fDragDist = Math.sqrt(dx * dx + dy * dy);
+      state.mouseX3d = touch2fMidX;
+      state.mouseY3d = touch2fMidY;
+      state.dragDistance3d = touch2fDragDist;
     }
-    if (!mouse3dDown) return;
-    e.preventDefault();
-    const touch = e.touches[0];
-    mouseX3d = touch.clientX;
-    mouseY3d = touch.clientY;
-    const dx = touch.clientX - touch3dStartX;
-    const dy = touch.clientY - touch3dStartY;
-    touch3dDragDist = Math.sqrt(dx * dx + dy * dy);
-    dragDistance3d = touch3dDragDist;
-    state.mouseX3d = mouseX3d;
-    state.mouseY3d = mouseY3d;
-    state.dragDistance3d = dragDistance3d;
-  });
+  }, { passive: false });
 
   room3dContainer.addEventListener('touchend', (e) => {
-    if (touch3dDragDist <= DRAG_THRESHOLD && room3d.available) {
-      const hit = room3d.raycastCeiling(mouseX3d, mouseY3d);
-      if (hit) {
-        if (state.placementMode) {
-          handlePlacement(hit.gridX, hit.gridY);
-        } else {
-          sim.ignite(hit.gridX, hit.gridY, 2);
+    if (touch2fActive && e.touches.length < 2) {
+      // Gesture ended
+      if (touch2fDragDist <= DRAG_THRESHOLD && room3d.available) {
+        // Short 2-finger tap = fire ignition or placement
+        const hit = room3d.raycastCeiling(touch2fMidX, touch2fMidY);
+        if (hit) {
+          if (state.placementMode) {
+            handlePlacement(hit.gridX, hit.gridY);
+          } else {
+            sim.ignite(hit.gridX, hit.gridY, 2);
+          }
         }
       }
+      touch2fActive = false;
+      touch2fDragDist = 0;
+      state.mouse3dDown = false;
+      state.dragDistance3d = 0;
+      room3d.hideWaterSpray();
     }
-    mouse3dDown = false;
-    touch3dDragDist = 0;
-    dragDistance3d = 0;
-    state.mouse3dDown = false;
-    state.dragDistance3d = 0;
-    room3d.hideWaterSpray();
-  });
+  }, { passive: true });
 }

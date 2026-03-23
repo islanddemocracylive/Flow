@@ -1,9 +1,9 @@
 /**
  * First-person camera controller.
  *
- * Arrow keys: forward/back/strafe
- * Right-click+drag: look around (yaw + pitch)
- * Mobile 2-finger drag: look around
+ * Arrow keys / on-screen D-pad: forward/back/strafe
+ * Left-click+drag: look around (yaw + pitch)
+ * Mobile 1-finger drag: look around
  * Camera always at eye level (6ft), anchored to ground.
  */
 
@@ -26,15 +26,16 @@ const fpPosition = typeof THREE !== 'undefined'
 
 const keysPressed = new Set();
 
-// Right-click drag state
+// Left-click drag state for look
 let lookDragging = false;
 let lookLastX = 0;
 let lookLastY = 0;
 
-// Mobile 2-finger look state
+// Mobile 1-finger look state
 let touchLookActive = false;
 let touchLookLastX = 0;
 let touchLookLastY = 0;
+let touchLookId = -1; // track which touch is the look touch
 
 // Clock for deltaTime
 const fpClock = typeof THREE !== 'undefined' ? new THREE.Clock() : null;
@@ -46,7 +47,7 @@ let lastVentKeyForStart = '';
 // ── Event listeners ─────────────────────────────────────────
 
 if (renderer) {
-  // Suppress context menu on 3D canvas
+  // Suppress context menu on 3D canvas (right-click is water spray)
   renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 
   // Keyboard
@@ -63,9 +64,9 @@ if (renderer) {
     keysPressed.delete(e.key);
   });
 
-  // Right-click look
+  // Left-click look
   renderer.domElement.addEventListener('mousedown', (e) => {
-    if (e.button === 2) {
+    if (e.button === 0) {
       lookDragging = true;
       lookLastX = e.clientX;
       lookLastY = e.clientY;
@@ -84,40 +85,83 @@ if (renderer) {
   });
 
   document.addEventListener('mouseup', (e) => {
-    if (e.button === 2) lookDragging = false;
+    if (e.button === 0) lookDragging = false;
   });
 
-  // Mobile 2-finger look
+  // Mobile 1-finger look (single finger drags to look around)
   renderer.domElement.addEventListener('touchstart', (e) => {
-    if (e.touches.length === 2) {
+    if (e.touches.length === 1) {
       touchLookActive = true;
-      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      touchLookLastX = midX;
-      touchLookLastY = midY;
+      touchLookId = e.touches[0].identifier;
+      touchLookLastX = e.touches[0].clientX;
+      touchLookLastY = e.touches[0].clientY;
     }
   }, { passive: true });
 
   renderer.domElement.addEventListener('touchmove', (e) => {
-    if (touchLookActive && e.touches.length === 2) {
-      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      const dx = midX - touchLookLastX;
-      const dy = midY - touchLookLastY;
-      touchLookLastX = midX;
-      touchLookLastY = midY;
-      fpYaw -= dx * LOOK_SENSITIVITY;
-      fpPitch -= dy * LOOK_SENSITIVITY;
-      fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
+    if (!touchLookActive) return;
+    // Find our tracked touch
+    for (let i = 0; i < e.touches.length; i++) {
+      if (e.touches[i].identifier === touchLookId) {
+        const t = e.touches[i];
+        const dx = t.clientX - touchLookLastX;
+        const dy = t.clientY - touchLookLastY;
+        touchLookLastX = t.clientX;
+        touchLookLastY = t.clientY;
+        fpYaw -= dx * LOOK_SENSITIVITY;
+        fpPitch -= dy * LOOK_SENSITIVITY;
+        fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
+        break;
+      }
+    }
+    // If a second finger arrives, cancel look (2-finger = water spray)
+    if (e.touches.length >= 2) {
+      touchLookActive = false;
+      touchLookId = -1;
     }
   }, { passive: true });
 
   renderer.domElement.addEventListener('touchend', (e) => {
-    if (e.touches.length < 2) {
+    // Check if our tracked touch is gone
+    let found = false;
+    for (let i = 0; i < e.touches.length; i++) {
+      if (e.touches[i].identifier === touchLookId) { found = true; break; }
+    }
+    if (!found) {
       touchLookActive = false;
+      touchLookId = -1;
     }
   }, { passive: true });
 }
+
+// ── On-screen D-pad support ──────────────────────────────────
+
+// Arrow buttons fire synthetic key presses
+function setupDpadButton(id, key) {
+  const btn = document.getElementById(id);
+  if (!btn) return;
+
+  function startPress(e) {
+    e.preventDefault();
+    keysPressed.add(key);
+  }
+  function endPress(e) {
+    e.preventDefault();
+    keysPressed.delete(key);
+  }
+
+  btn.addEventListener('mousedown', startPress);
+  btn.addEventListener('mouseup', endPress);
+  btn.addEventListener('mouseleave', endPress);
+  btn.addEventListener('touchstart', startPress, { passive: false });
+  btn.addEventListener('touchend', endPress, { passive: false });
+  btn.addEventListener('touchcancel', endPress, { passive: false });
+}
+
+setupDpadButton('dpad-up', 'ArrowUp');
+setupDpadButton('dpad-down', 'ArrowDown');
+setupDpadButton('dpad-left', 'ArrowLeft');
+setupDpadButton('dpad-right', 'ArrowRight');
 
 // ── Starting position based on door placement ─────────────
 

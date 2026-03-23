@@ -10,7 +10,7 @@
   <div id="app">
     <header>
       <h1>Ceiling Fire Simulation</h1>
-      <p class="subtitle">Click to start fires. Click &amp; drag to spray water. 3D: Arrow keys to walk, right-click+drag to look. 20&times;10 panel grid (1 ft&sup2; panels).</p>
+      <p class="subtitle">Click to start fires. Click &amp; drag to spray water. 3D: Drag to look, right-click to spray, arrows to walk. 20&times;10 panel grid (1 ft&sup2; panels).</p>
     </header>
 
     <div id="mobile-stats" class="mobile-stats" style="display:none;">
@@ -28,6 +28,12 @@
         </div>
         <div id="view-3d" class="view-panel">
           <div id="room3d-container"></div>
+          <div id="dpad" class="dpad">
+            <button id="dpad-up" class="dpad-btn dpad-up" aria-label="Move forward">&#9650;</button>
+            <button id="dpad-left" class="dpad-btn dpad-left" aria-label="Strafe left">&#9664;</button>
+            <button id="dpad-down" class="dpad-btn dpad-down" aria-label="Move backward">&#9660;</button>
+            <button id="dpad-right" class="dpad-btn dpad-right" aria-label="Strafe right">&#9654;</button>
+          </div>
         </div>
       </div>
 
