@@ -100,7 +100,7 @@ export class FireSimulation {
    */
   getSprayParams(hitGridX, hitGridY, playerPos) {
     const HOSE_HEIGHT = 4;              // hose held at chest level (ft)
-    const CEILING_H = 8;               // room ceiling height (ft)
+    const CEILING_H = 9;               // room ceiling height (ft)
     const verticalDist = CEILING_H - HOSE_HEIGHT;
 
     // 3D distance from hose to ceiling hit point
