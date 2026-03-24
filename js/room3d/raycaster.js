@@ -40,7 +40,7 @@ if (scene) {
     opacity: 0.4,
     side: THREE.DoubleSide,
     depthWrite: false,
-    depthTest: false,
+    depthTest: true,
   });
   sprayIndicator = new THREE.Mesh(new THREE.BufferGeometry(), sprayMat);
   sprayIndicator.renderOrder = 999;
