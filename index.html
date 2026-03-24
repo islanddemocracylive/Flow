@@ -9,20 +9,20 @@
 <body>
   <div id="app">
     <header>
-      <h1>Flow State</h1>
-      <p class="subtitle">Design Room Scenarios in 2D or 3D. Open the Simulator to run the Firefighter experience.</p>
+      <div class="header-left">
+        <h1>Flow State</h1>
+        <p class="subtitle">Create or load a fire scenario. Share to a separate device or open the simulator in a separate window. Click play to preview or run the simulation.</p>
+      </div>
+      <div class="header-actions">
+        <button id="btn-share-viewer" class="header-btn share-btn" title="Copy simulator link / QR code">Share</button>
+        <a id="open-viewer-link" class="header-btn viewer-link" href="viewer.html" target="_blank">Open Simulator &#8599;</a>
+        <button id="btn-reset" class="header-btn reset-btn" title="Reset fire">Reset</button>
+        <button id="btn-play" class="header-btn play-btn">Play Scenario</button>
+      </div>
     </header>
 
     <div id="main-container">
       <div id="view-area">
-        <div id="view-tabs">
-          <button class="view-tab active" data-view="2d">2D</button>
-          <button class="view-tab" data-view="3d">3D</button>
-          <button id="btn-share-viewer" class="view-tab share-btn" title="Copy simulator link / QR code">Share</button>
-          <button id="btn-reset" class="tab-bar-btn reset-btn" title="Reset fire">Reset</button>
-          <button id="btn-play" class="tab-bar-btn play-btn">Play Scenario</button>
-          <a id="open-viewer-link" class="view-tab viewer-link" href="viewer.html" target="_blank">Open Simulator &#8599;</a>
-        </div>
         <div id="view-2d" class="view-panel active">
           <canvas id="simulation-canvas"></canvas>
         </div>
@@ -54,6 +54,10 @@
         <!-- Design modes -->
         <div class="control-group">
           <h3>Room Design</h3>
+          <div class="button-row view-toggle-row" style="margin-bottom:8px">
+            <button class="view-tab active" data-view="2d">2D</button>
+            <button class="view-tab" data-view="3d">3D</button>
+          </div>
           <p class="control-hint">Select a mode, then click the 2D grid or 3D view to add/remove</p>
           <div class="button-row placement-row">
             <button id="btn-mode-start" class="placement-btn" title="Click to toggle fire start locations">Fire Starts</button>

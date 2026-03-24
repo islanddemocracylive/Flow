@@ -21,9 +21,17 @@ body {
 }
 
 header {
-  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
   background: #16213e;
   border-bottom: 1px solid #0f3460;
+  gap: 16px;
+}
+
+.header-left {
+  min-width: 0;
 }
 
 header h1 {
@@ -32,9 +40,87 @@ header h1 {
 }
 
 .subtitle {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: #888;
   margin-top: 2px;
+}
+
+/* ── Header action buttons ────────────────────────────── */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.header-btn {
+  padding: 6px 14px;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.header-btn:hover {
+  background: #0f3460;
+}
+
+.header-btn.share-btn {
+  border-color: #3a6ea5;
+  color: #6cb4ee;
+}
+
+.header-btn.share-btn:hover {
+  background: #0f3460;
+}
+
+.header-btn.viewer-link {
+  color: #6cb4ee;
+  font-size: 0.8rem;
+}
+
+.header-btn.viewer-link:hover {
+  color: #9dd4ff;
+  background: #0f3460;
+}
+
+.header-btn.reset-btn {
+  background: transparent;
+  color: #888;
+  border-color: #333;
+  font-size: 0.72rem;
+  padding: 5px 10px;
+}
+
+.header-btn.reset-btn:hover {
+  color: #e74c3c;
+  border-color: #e74c3c;
+}
+
+.header-btn.play-btn {
+  background: #1a6a2e;
+  border-color: #2a8a3e;
+  color: #fff;
+  font-weight: bold;
+  padding: 6px 18px;
+}
+
+.header-btn.play-btn:hover {
+  background: #2a8a3e;
+}
+
+.header-btn.play-btn.playing {
+  background: #8a2a2a;
+  border-color: #c44;
+}
+
+.header-btn.play-btn.playing:hover {
+  background: #a33;
 }
 
 #main-container {
@@ -43,7 +129,7 @@ header h1 {
   overflow: hidden;
 }
 
-/* ── View area with tabs ───────────────────────────────── */
+/* ── View area ─────────────────────────────────────────── */
 #view-area {
   flex: 1;
   display: flex;
@@ -51,93 +137,40 @@ header h1 {
   overflow: hidden;
 }
 
-#view-tabs {
-  display: flex;
-  align-items: center;
-  background: #16213e;
-  border-bottom: 1px solid #0f3460;
-  flex-shrink: 0;
-  gap: 4px;
-  padding-right: 4px;
+/* ── 2D / 3D view toggle (inside admin panel) ─────────── */
+.view-toggle-row {
+  gap: 0 !important;
 }
 
 .view-tab {
-  padding: 8px 20px;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: #888;
-  font-size: 0.85rem;
+  flex: 1;
+  padding: 6px 0;
+  background: #0f2a4a;
+  border: 1px solid #1a5a8a;
+  color: #6cb4ee;
+  font-size: 0.8rem;
   cursor: pointer;
   transition: all 0.15s;
+  text-align: center;
+}
+
+.view-tab:first-child {
+  border-radius: 4px 0 0 4px;
+  border-right: none;
+}
+
+.view-tab:last-child {
+  border-radius: 0 4px 4px 0;
 }
 
 .view-tab:hover {
-  color: #e0e0e0;
-  background: rgba(255, 255, 255, 0.03);
+  background: #1a3a6e;
 }
 
 .view-tab.active {
-  color: #ff6b35;
-  border-bottom-color: #ff6b35;
-}
-
-/* ── Tab bar action buttons (Play / Reset) ────────────── */
-.tab-bar-btn {
-  padding: 5px 16px;
-  border: 1px solid #0f3460;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.15s;
-  margin: 4px 0;
-  align-self: center;
-}
-
-.tab-bar-btn.reset-btn {
-  margin-left: auto;
-  background: transparent;
-  color: #888;
-  border-color: #333;
-  font-size: 0.72rem;
-  padding: 4px 10px;
-}
-
-.tab-bar-btn.reset-btn:hover {
-  color: #e74c3c;
-  border-color: #e74c3c;
-}
-
-.tab-bar-btn.play-btn {
-  background: #1a6a2e;
-  border-color: #2a8a3e;
+  background: #ff6b35;
   color: #fff;
-  font-weight: bold;
-  margin-right: 4px;
-}
-
-.tab-bar-btn.play-btn:hover {
-  background: #2a8a3e;
-}
-
-.tab-bar-btn.play-btn.playing {
-  background: #8a2a2a;
-  border-color: #c44;
-}
-
-.tab-bar-btn.play-btn.playing:hover {
-  background: #a33;
-}
-
-.view-tab.viewer-link {
-  text-decoration: none;
-  color: #6cb4ee;
-  font-size: 0.8rem;
-}
-
-.view-tab.viewer-link:hover {
-  color: #9dd4ff;
-  background: rgba(255, 255, 255, 0.03);
+  border-color: #ff6b35;
 }
 
 .view-panel {
@@ -509,14 +542,6 @@ select {
   min-height: 1em;
 }
 
-.share-btn {
-  border-color: #3a6ea5;
-  color: #6cb4ee;
-}
-
-.share-btn:hover {
-  background: #0f3460;
-}
 
 /* ── Mobile toggle button ─────────────────────────────── */
 #toggle-panel-btn {
@@ -540,7 +565,21 @@ select {
 /* ── Responsive: stack on small screens ───────────────── */
 @media (max-width: 700px) {
   header {
+    flex-direction: column;
+    align-items: flex-start;
     padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .header-btn {
+    font-size: 0.72rem;
+    padding: 5px 10px;
   }
 
   header h1 {
@@ -558,11 +597,6 @@ select {
   #view-area {
     flex: 1;
     min-height: 0;
-  }
-
-  .view-tab {
-    padding: 6px 14px;
-    font-size: 0.8rem;
   }
 
   #admin-panel {
