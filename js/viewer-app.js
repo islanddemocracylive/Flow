@@ -28,7 +28,11 @@ const statusEl = document.getElementById('status');
 const net = new SimNetwork('viewer');
 
 net.onHeatData = (heatArray) => {
-  sim.heat.set(heatArray);
+  // Use the lower of local and server heat per cell so local water
+  // suppression isn't overwritten by stale server data each frame.
+  for (let i = 0; i < sim.heat.length; i++) {
+    sim.heat[i] = Math.min(sim.heat[i], heatArray[i]);
+  }
 };
 
 net.onParams = (params) => {

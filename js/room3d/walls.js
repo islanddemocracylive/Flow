@@ -193,6 +193,27 @@ if (scene) {
   floorLine.position.copy(floor.position);
   scene.add(floorLine);
 
+  // Floor grid lines
+  const floorGridMat = new THREE.LineBasicMaterial({
+    color: 0x444455,
+    transparent: true,
+    opacity: 0.25,
+  });
+  for (let x = 0; x <= ROOM_W; x++) {
+    const geo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x, 0.005, 0),
+      new THREE.Vector3(x, 0.005, ROOM_D),
+    ]);
+    scene.add(new THREE.Line(geo, floorGridMat));
+  }
+  for (let z = 0; z <= ROOM_D; z++) {
+    const geo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0.005, z),
+      new THREE.Vector3(ROOM_W, 0.005, z),
+    ]);
+    scene.add(new THREE.Line(geo, floorGridMat));
+  }
+
   // Corner edges
   function addCornerEdge(x, z) {
     const geo = new THREE.BufferGeometry().setFromPoints([

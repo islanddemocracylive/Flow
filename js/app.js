@@ -143,6 +143,90 @@ if (room3dContainer && camera && typeof THREE !== 'undefined') {
     clickStartY = e.clientY;
   });
 
+  // Helper: set up raycaster from client coords
+  function setupRay(clientX, clientY) {
+    const canvasEl = room3dContainer.querySelector('canvas');
+    if (!canvasEl) return false;
+    const rect = canvasEl.getBoundingClientRect();
+    ndcMouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    ndcMouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(ndcMouse, camera);
+    return true;
+  }
+
+  // Helper: find nearest wall hit for door mode
+  function findWallHit() {
+    let best = null;
+    let bestDist = Infinity;
+    for (const wp of wallPlanes) {
+      const hp = new THREE.Vector3();
+      const hit = raycaster.ray.intersectPlane(wp.plane, hp);
+      if (!hit) continue;
+      if (hp.y < 0 || hp.y > ROOM_H) continue;
+      const along = wp.axis === 'x' ? hp.x : hp.z;
+      const maxAlong = wp.axis === 'x' ? ROOM_W : ROOM_D;
+      if (along < 0 || along >= maxAlong) continue;
+      const dist = raycaster.ray.origin.distanceTo(hp);
+      if (dist < bestDist) {
+        bestDist = dist;
+        let gx, gy;
+        if (wp.wall === 'far')   { gx = Math.floor(hp.x); gy = 0; }
+        if (wp.wall === 'back')  { gx = Math.floor(hp.x); gy = GRID_ROWS - 1; }
+        if (wp.wall === 'left')  { gx = 0; gy = Math.floor(hp.z); }
+        if (wp.wall === 'right') { gx = GRID_COLS - 1; gy = Math.floor(hp.z); }
+        best = { gridX: gx, gridY: gy, wall: wp.wall };
+      }
+    }
+    return best;
+  }
+
+  // ── Hover highlight on mousemove ──
+  room3dContainer.addEventListener('mousemove', (e) => {
+    if (!room3d.isOrbitMode() || !state.designMode) {
+      room3d.hideHoverCell();
+      return;
+    }
+    if (!setupRay(e.clientX, e.clientY)) return;
+
+    const mode = state.designMode;
+    const modeColors = {
+      'start-location': 0xff4422,
+      'ceiling-vent': 0x44ffaa,
+      'door': 0x44aaff,
+      'obstacle': 0xffaa22,
+    };
+    const color = modeColors[mode] || 0xffffff;
+
+    if (mode === 'obstacle') {
+      const hit = raycaster.ray.intersectPlane(floorPlane, hitPoint);
+      if (hit && hit.x >= 0 && hit.x < ROOM_W && hit.z >= 0 && hit.z < ROOM_D) {
+        room3d.showHoverCell(Math.floor(hit.x), Math.floor(hit.z), 'floor', color);
+      } else {
+        room3d.hideHoverCell();
+      }
+    } else if (mode === 'door') {
+      const best = findWallHit();
+      if (best) {
+        room3d.showHoverWall(best.gridX, best.gridY, best.wall, color);
+      } else {
+        room3d.hideHoverCell();
+      }
+    } else {
+      // Fire starts, ceiling vents — ceiling plane
+      const hit = raycaster.ray.intersectPlane(ceilingPlane, hitPoint);
+      if (hit && hit.x >= 0 && hit.x < ROOM_W && hit.z >= 0 && hit.z < ROOM_D) {
+        room3d.showHoverCell(Math.floor(hit.x), Math.floor(hit.z), 'ceiling', color);
+      } else {
+        room3d.hideHoverCell();
+      }
+    }
+  });
+
+  room3dContainer.addEventListener('mouseleave', () => {
+    room3d.hideHoverCell();
+  });
+
+  // ── Click handling ──
   room3dContainer.addEventListener('mouseup', (e) => {
     if (!room3d.isOrbitMode() || !state.designMode) return;
 
@@ -151,12 +235,7 @@ if (room3dContainer && camera && typeof THREE !== 'undefined') {
     const dy = e.clientY - clickStartY;
     if (Math.sqrt(dx * dx + dy * dy) > 5) return;
 
-    const canvasEl = room3dContainer.querySelector('canvas');
-    if (!canvasEl) return;
-    const rect = canvasEl.getBoundingClientRect();
-    ndcMouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    ndcMouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(ndcMouse, camera);
+    if (!setupRay(e.clientX, e.clientY)) return;
 
     const mode = state.designMode;
 
@@ -172,27 +251,7 @@ if (room3dContainer && camera && typeof THREE !== 'undefined') {
       }
     } else if (mode === 'door') {
       if (e.button !== 0) return;
-      let best = null;
-      let bestDist = Infinity;
-      for (const wp of wallPlanes) {
-        const hp = new THREE.Vector3();
-        const hit = raycaster.ray.intersectPlane(wp.plane, hp);
-        if (!hit) continue;
-        if (hp.y < 0 || hp.y > ROOM_H) continue;
-        const along = wp.axis === 'x' ? hp.x : hp.z;
-        const maxAlong = wp.axis === 'x' ? ROOM_W : ROOM_D;
-        if (along < 0 || along >= maxAlong) continue;
-        const dist = raycaster.ray.origin.distanceTo(hp);
-        if (dist < bestDist) {
-          bestDist = dist;
-          let gx, gy;
-          if (wp.wall === 'far')   { gx = Math.floor(hp.x); gy = 0; }
-          if (wp.wall === 'back')  { gx = Math.floor(hp.x); gy = GRID_ROWS - 1; }
-          if (wp.wall === 'left')  { gx = 0; gy = Math.floor(hp.z); }
-          if (wp.wall === 'right') { gx = GRID_COLS - 1; gy = Math.floor(hp.z); }
-          best = { gridX: gx, gridY: gy };
-        }
-      }
+      const best = findWallHit();
       if (best) handleDesignClick(best.gridX, best.gridY);
     } else if (e.button === 0) {
       // Fire starts and ceiling vents — ceiling plane

@@ -5,7 +5,7 @@
  * used by app.js and viewer-app.js.
  */
 
-import { ROOM_W, ROOM_D, ROOM_H } from '../constants.js';
+import { ROOM_W, ROOM_D, ROOM_H, DOOR_H } from '../constants.js';
 import { heatToColor } from '../colorUtils.js';
 import { container, scene, camera, renderer, fireLight } from './scene.js';
 import { buildWalls, wallGroup, doorFrameGroup } from './walls.js';
@@ -22,6 +22,24 @@ let lastVentKey = '';
 
 // Bail out if Three.js not available
 const available = !!(container && scene);
+
+// ── Placement hover highlight ────────────────────────────
+let hoverHighlight = null;
+
+if (available) {
+  const hoverGeo = new THREE.PlaneGeometry(1, 1);
+  const hoverMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.25,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  hoverHighlight = new THREE.Mesh(hoverGeo, hoverMat);
+  hoverHighlight.visible = false;
+  hoverHighlight.renderOrder = 998;
+  scene.add(hoverHighlight);
+}
 
 // Track current camera mode
 let orbitMode = false;
@@ -137,6 +155,57 @@ const room3d = {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
+  },
+
+  /** Show hover highlight on a grid cell. surface: 'floor' | 'ceiling' */
+  showHoverCell(gridX, gridY, surface, color) {
+    if (!hoverHighlight) return;
+    const y = surface === 'ceiling' ? ROOM_H - 0.005 : 0.01;
+    hoverHighlight.position.set(gridX + 0.5, y, gridY + 0.5);
+    hoverHighlight.rotation.x = -Math.PI / 2;
+    hoverHighlight.rotation.y = 0;
+    hoverHighlight.rotation.z = 0;
+    hoverHighlight.material.color.set(color || 0xffffff);
+    hoverHighlight.visible = true;
+  },
+
+  /** Show hover highlight on a wall cell for door placement */
+  showHoverWall(gridX, gridY, wall, color) {
+    if (!hoverHighlight) return;
+    const halfDoor = DOOR_H / 2;
+    hoverHighlight.scale.set(1, 1, 1);
+    hoverHighlight.material.color.set(color || 0x44aaff);
+    hoverHighlight.rotation.x = 0;
+
+    if (wall === 'far') {
+      hoverHighlight.position.set(gridX + 0.5, halfDoor, 0.01);
+      hoverHighlight.rotation.y = 0;
+      hoverHighlight.rotation.z = 0;
+      hoverHighlight.scale.y = DOOR_H;
+    } else if (wall === 'back') {
+      hoverHighlight.position.set(gridX + 0.5, halfDoor, ROOM_D - 0.01);
+      hoverHighlight.rotation.y = 0;
+      hoverHighlight.rotation.z = 0;
+      hoverHighlight.scale.y = DOOR_H;
+    } else if (wall === 'left') {
+      hoverHighlight.position.set(0.01, halfDoor, gridY + 0.5);
+      hoverHighlight.rotation.y = Math.PI / 2;
+      hoverHighlight.rotation.z = 0;
+      hoverHighlight.scale.y = DOOR_H;
+    } else if (wall === 'right') {
+      hoverHighlight.position.set(ROOM_W - 0.01, halfDoor, gridY + 0.5);
+      hoverHighlight.rotation.y = Math.PI / 2;
+      hoverHighlight.rotation.z = 0;
+      hoverHighlight.scale.y = DOOR_H;
+    }
+    hoverHighlight.visible = true;
+  },
+
+  hideHoverCell() {
+    if (hoverHighlight) {
+      hoverHighlight.visible = false;
+      hoverHighlight.scale.set(1, 1, 1);
+    }
   },
 
   raycastCeiling,
