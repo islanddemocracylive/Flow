@@ -28,9 +28,8 @@ export class FireSimulation {
     this.spreadSpeed = 1.5;
     this.ignitionThreshold = 0.15;
     this.maxIntensity = 1.0;
-    this.waterStrength = 3.0;
     this.waterRadius = 2;
-    this.sprayPSI = 100;          // nozzle pressure – controls max reach
+    this.sprayPSI = 100;          // nozzle pressure – controls reach & flow rate
 
     // Vent mechanics
     // Each vent: { x, y, type: 'ceiling'|'door', wall?: 'far'|'left'|'right'|'back' }
@@ -170,8 +169,16 @@ export class FireSimulation {
     };
   }
 
+  /**
+   * Compute flow rate from nozzle pressure.
+   * Uses standard nozzle coefficient formula: GPM = K × √PSI
+   * K=15 models a typical 1¾" combination nozzle (150 GPM @ 100 PSI).
+   */
+  getGPM() {
+    return 15 * Math.sqrt(this.sprayPSI);
+  }
+
   applyWater(cx, cy, dt, playerPos) {
-    // If no player position provided, fall back to simple circular spray
     const params = playerPos ? this.getSprayParams(cx, cy, playerPos) : null;
 
     if (playerPos && !params) return; // out of range
@@ -180,6 +187,15 @@ export class FireSimulation {
     const minorR = params ? params.minorR : this.waterRadius;
     const angle = params ? params.sprayAngle : 0;
     const strengthMul = params ? params.strengthFactor : 1.0;
+
+    // Derive suppression rate from physics:
+    // GPM → gallons/sec, distributed over spray ellipse area.
+    // COOLING_FACTOR converts gallons/sec/sqft to heat reduction rate.
+    // Tuned so 150 GPM overhead (~1.5 sqft area) suppresses a cell in ~0.5s.
+    const COOLING_FACTOR = 0.8;
+    const gps = this.getGPM() / 60;                      // gallons per second
+    const sprayArea = Math.PI * majorR * minorR;          // sq ft
+    const suppressionRate = (gps / sprayArea) * COOLING_FACTOR * strengthMul;
 
     const cosA = Math.cos(-angle);
     const sinA = Math.sin(-angle);
@@ -201,7 +217,7 @@ export class FireSimulation {
 
         const falloff = 1.0 - Math.sqrt(ellipseDist);
         const i = this.idx(x, y);
-        this.heat[i] = Math.max(0, this.heat[i] - this.waterStrength * strengthMul * falloff * dt);
+        this.heat[i] = Math.max(0, this.heat[i] - suppressionRate * falloff * dt);
       }
     }
   }
@@ -529,7 +545,6 @@ export class FireSimulation {
         spreadSpeed: this.spreadSpeed,
         ignitionThreshold: this.ignitionThreshold,
         maxIntensity: this.maxIntensity,
-        waterStrength: this.waterStrength,
         waterRadius: this.waterRadius,
         sprayPSI: this.sprayPSI,
         ventStrength: this.ventStrength,

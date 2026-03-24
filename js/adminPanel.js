@@ -173,17 +173,24 @@ export function setupAdminPanel(sim, state, net) {
   bindSlider('spread-speed', 'spread-speed-val', 'spreadSpeed');
   bindSlider('ignition-threshold', 'ignition-threshold-val', 'ignitionThreshold');
   bindSlider('max-intensity', 'max-intensity-val', 'maxIntensity', v => v.toFixed(2));
-  bindSlider('water-strength', 'water-strength-val', 'waterStrength', v => v.toFixed(1));
   bindSlider('water-radius', 'water-radius-val', 'waterRadius');
   bindSlider('spray-psi', 'spray-psi-val', 'sprayPSI');
   bindSlider('vent-strength', 'vent-strength-val', 'ventStrength', v => v.toFixed(1));
+
+  // GPM readout: updates whenever PSI slider changes
+  function updateGPMDisplay() {
+    const gpmEl = document.getElementById('spray-gpm-val');
+    if (gpmEl) gpmEl.textContent = Math.round(sim.getGPM()) + ' GPM';
+  }
+  const psiSlider = document.getElementById('spray-psi');
+  if (psiSlider) psiSlider.addEventListener('input', updateGPMDisplay);
+  updateGPMDisplay();
 
   function syncSliders(sim) {
     const pairs = [
       ['spread-speed', 'spread-speed-val', 'spreadSpeed', null],
       ['ignition-threshold', 'ignition-threshold-val', 'ignitionThreshold', null],
       ['max-intensity', 'max-intensity-val', 'maxIntensity', v => v.toFixed(2)],
-      ['water-strength', 'water-strength-val', 'waterStrength', v => v.toFixed(1)],
       ['water-radius', 'water-radius-val', 'waterRadius', null],
       ['spray-psi', 'spray-psi-val', 'sprayPSI', null],
       ['vent-strength', 'vent-strength-val', 'ventStrength', v => v.toFixed(1)],
@@ -194,6 +201,7 @@ export function setupAdminPanel(sim, state, net) {
       if (slider) slider.value = sim[prop];
       if (display) display.textContent = format ? format(sim[prop]) : sim[prop];
     }
+    updateGPMDisplay();
   }
 
   // Grid checkbox
