@@ -102,7 +102,11 @@ export class FireSimulation {
    * the ceiling obliquely.
    *
    * Cone half-angle scales inversely with PSI (higher pressure = tighter
-   * stream). The waterRadius slider acts as a multiplier on the cone angle.
+   * stream). The Spray Width slider acts as a multiplier on the cone angle.
+   *
+   * Strength is constant until 70% of max reach, then fades linearly.
+   * The cone geometry itself handles the natural per-cell reduction at
+   * distance (same water volume spread over larger area).
    *
    * playerPos: {x, y, z} in room coords.
    * hitGridX, hitGridY: grid cell the spray is aimed at.
@@ -149,9 +153,14 @@ export class FireSimulation {
     // Spray direction angle on the ceiling
     const sprayAngle = Math.atan2(dz, dx);
 
-    // Strength falls off with distance (water disperses over larger area)
-    const distFactor = Math.max(0.2, 1.0 - totalDist / maxReach);
-    const strengthFactor = distFactor * distFactor;
+    // Strength: the same volume of water spreads over a larger ellipse area
+    // at distance, so per-cell suppression naturally decreases. We don't
+    // apply an additional distance penalty — the cone geometry handles it.
+    // Only apply a mild dropoff near max reach where the stream breaks apart.
+    const reachRatio = totalDist / maxReach;
+    const strengthFactor = reachRatio > 0.7
+      ? 1.0 - (reachRatio - 0.7) / 0.3   // linear fade from 70% to 100% of max reach
+      : 1.0;
 
     return {
       majorR,
