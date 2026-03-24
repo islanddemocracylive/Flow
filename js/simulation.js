@@ -41,6 +41,11 @@ export class FireSimulation {
     // Obstacles: height per cell (0 = no obstacle, 1+ = stacked blocks in feet)
     this.obstacles = new Uint8Array(cols * rows);
 
+    // Moisture: residual wetness per cell [0, 1].
+    // Accumulates while water is applied, evaporates slowly after.
+    // Wet cells resist re-ignition and burn slower.
+    this.moisture = new Float32Array(cols * rows);
+
     // Fire start locations: set of grid indices
     this.startLocations = new Set();
   }
@@ -52,6 +57,7 @@ export class FireSimulation {
   reset() {
     this.heat.fill(0);
     this.nextHeat.fill(0);
+    this.moisture.fill(0);
   }
 
   resize(cols, rows) {
@@ -61,6 +67,7 @@ export class FireSimulation {
     this.nextHeat = new Float32Array(cols * rows);
     this.airflow = new Float32Array(cols * rows * 2);
     this.obstacles = new Uint8Array(cols * rows);
+    this.moisture = new Float32Array(cols * rows);
     this.startLocations = new Set();
   }
 
@@ -219,6 +226,12 @@ export class FireSimulation {
         const i = this.idx(x, y);
         const cooled = this.heat[i] - suppressionRate * falloff * dt;
         this.heat[i] = cooled > 0 ? cooled : 0; // also handles NaN → 0
+
+        // Accumulate moisture – water density (gal/s/sqft) hitting this cell.
+        // Saturates at 1.0 in ~1s of continuous direct spray overhead.
+        const waterDensity = (gps / sprayArea) * falloff * strengthMul;
+        const m = this.moisture[i] + waterDensity * dt;
+        this.moisture[i] = m < 1 ? m : 1;
       }
     }
   }
@@ -417,26 +430,42 @@ export class FireSimulation {
   }
 
   step(dt) {
-    const { cols, rows, heat, nextHeat, spreadSpeed, ignitionThreshold, airflow, ventStrength } = this;
+    const { cols, rows, heat, nextHeat, moisture, spreadSpeed, ignitionThreshold, airflow, ventStrength } = this;
     const hasAirflow = this.vents.length > 0;
+
+    // Moisture constants
+    const EVAP_RATE = 0.05;       // dries from full saturation in ~20s
+    const GROWTH_DAMPEN = 0.85;   // at full moisture, self-intensification reduced 85%
+    const IGNITION_DAMPEN = 0.95; // at full moisture, ignition chance reduced 95%
 
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const i = this.idx(x, y);
         let h = heat[i];
+        let m = moisture[i];
+
+        // Evaporate moisture
+        if (m > 0) {
+          m = m - EVAP_RATE * dt;
+          if (m < 0) m = 0;
+        }
+
+        // Moisture dampening factor: 1.0 (dry) → near 0 (fully saturated)
+        const mDampen = 1.0 - m;
 
         if (h > 0 && this.isCeilingVent(x, y)) {
           h = Math.max(0, h - 0.8 * ventStrength * dt);
         }
 
         if (h > 0) {
-          h = Math.min(1.0, h + 0.3 * dt * (1.0 - h));
+          // Self-intensification dampened by moisture (wet material burns slower)
+          h = Math.min(1.0, h + 0.3 * dt * (1.0 - h) * (1.0 - m * GROWTH_DAMPEN));
 
           if (hasAirflow) {
             const ai = (y * cols + x) * 2;
             const mag = Math.sqrt(airflow[ai] * airflow[ai] + airflow[ai + 1] * airflow[ai + 1]);
             if (mag > 0.05) {
-              h = Math.min(1.0, h + mag * ventStrength * 0.15 * dt);
+              h = Math.min(1.0, h + mag * ventStrength * 0.15 * dt * (1.0 - m * GROWTH_DAMPEN));
             }
           }
 
@@ -463,7 +492,9 @@ export class FireSimulation {
           const avgNeighbor = neighborHeat / count;
 
           if (h <= 0 && avgNeighbor > ignitionThreshold) {
-            let ignitionChance = spreadSpeed * dt * (avgNeighbor - ignitionThreshold) * (count / 8);
+            // Moisture strongly resists re-ignition (wet ceiling won't catch)
+            let ignitionChance = spreadSpeed * dt * (avgNeighbor - ignitionThreshold) * (count / 8)
+              * (1.0 - m * IGNITION_DAMPEN);
 
             if (hasAirflow) {
               const ai = (y * cols + x) * 2;
@@ -499,14 +530,16 @@ export class FireSimulation {
               h = 0.05 + Math.random() * 0.1;
             }
           } else if (h > 0) {
+            // Neighbor diffusion also dampened by moisture
             const diff = avgNeighbor - h;
             if (diff > 0) {
-              h += diff * spreadSpeed * 0.2 * dt;
+              h += diff * spreadSpeed * 0.2 * dt * (1.0 - m * GROWTH_DAMPEN);
             }
           }
         }
 
         nextHeat[i] = Math.max(0, Math.min(1.0, h));
+        moisture[i] = m;
       }
     }
 
