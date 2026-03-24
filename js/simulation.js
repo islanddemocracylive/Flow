@@ -150,8 +150,8 @@ export class FireSimulation {
     // Minor axis (perpendicular to spray direction): cone radius.
     // Major axis (along spray direction): stretches by 1/cos(incidence).
     const cosAngle = Math.max(0.15, Math.cos(incidenceAngle));
-    const majorR = Math.max(0.5, coneRadius / cosAngle);
-    const minorR = Math.max(0.5, coneRadius);
+    const majorR = Math.max(1.0, coneRadius / cosAngle);
+    const minorR = Math.max(1.0, coneRadius);
 
     // Spray direction angle on the ceiling
     const sprayAngle = Math.atan2(dz, dx);
@@ -197,9 +197,11 @@ export class FireSimulation {
     // Peak density at cone center = 3× average (cone falloff profile integrates
     // to 1/3 of area × peak). COOLING_FACTOR converts peak gal/s/sqft to heat
     // reduction rate.
-    // At 100 PSI, 7ft horizontal: suppressionRate ≈ 2.1/s → ~0.5s observed.
+    // CF=5 compensates for background-tab throttling (controller at ~1fps
+    // while viewer tab is focused, dt capped at 0.05).
+    // At 100 PSI overhead: ~instant. 7ft: ~0.2s. 10ft: ~0.5s.
     // Moisture mechanic handles re-ignition resistance separately.
-    const COOLING_FACTOR = 2.5;
+    const COOLING_FACTOR = 5;
     const gps = this.getGPM() / 60;                      // gallons per second
     const sprayArea = Math.PI * majorR * minorR;          // sq ft
     const peakDensity = 3 * gps / sprayArea;              // gal/s/sqft at center

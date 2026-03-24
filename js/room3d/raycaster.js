@@ -27,12 +27,14 @@ export function raycastCeiling(clientX, clientY) {
   return null;
 }
 
-// Water spray visual indicator – elliptical shape
+// Water spray visual indicator – elliptical shape built in XZ plane (ceiling).
+// We rebuild geometry each frame to avoid scale+quaternion interaction issues.
 let sprayIndicator = null;
+let sprayMat = null;
+const SPRAY_SEGMENTS = 48;
 
 if (scene) {
-  const sprayGeo = new THREE.CircleGeometry(1, 32);
-  const sprayMat = new THREE.MeshBasicMaterial({
+  sprayMat = new THREE.MeshBasicMaterial({
     color: 0x44aaff,
     transparent: true,
     opacity: 0.4,
@@ -40,10 +42,51 @@ if (scene) {
     depthWrite: false,
     depthTest: false,
   });
-  sprayIndicator = new THREE.Mesh(sprayGeo, sprayMat);
+  sprayIndicator = new THREE.Mesh(new THREE.BufferGeometry(), sprayMat);
   sprayIndicator.renderOrder = 999;
   sprayIndicator.visible = false;
   scene.add(sprayIndicator);
+}
+
+// Reusable arrays for ellipse geometry
+const _ellipsePositions = new Float32Array((SPRAY_SEGMENTS + 2) * 3);
+const _ellipseIndices = [];
+for (let i = 0; i < SPRAY_SEGMENTS; i++) {
+  _ellipseIndices.push(0, i + 1, (i + 1) % SPRAY_SEGMENTS + 1);
+}
+
+/**
+ * Build an ellipse fan directly in world XZ at the given position.
+ * majorR along sprayAngle direction, minorR perpendicular to it.
+ */
+function buildEllipseGeometry(worldX, worldZ, majorR, minorR, sprayAngle) {
+  const cosA = Math.cos(sprayAngle);
+  const sinA = Math.sin(sprayAngle);
+
+  // Center vertex at (0, 0, 0) — we position via mesh.position
+  _ellipsePositions[0] = 0;
+  _ellipsePositions[1] = 0;
+  _ellipsePositions[2] = 0;
+
+  for (let i = 0; i < SPRAY_SEGMENTS; i++) {
+    const t = (i / SPRAY_SEGMENTS) * Math.PI * 2;
+    // Ellipse point in local spray coords (major along X, minor along Z)
+    const lx = Math.cos(t) * majorR;
+    const lz = Math.sin(t) * minorR;
+    // Rotate to world XZ by sprayAngle
+    const wx = lx * cosA - lz * sinA;
+    const wz = lx * sinA + lz * cosA;
+    const off = (i + 1) * 3;
+    _ellipsePositions[off]     = wx;
+    _ellipsePositions[off + 1] = 0;
+    _ellipsePositions[off + 2] = wz;
+  }
+
+  const geo = sprayIndicator.geometry;
+  geo.setAttribute('position', new THREE.BufferAttribute(_ellipsePositions, 3));
+  geo.setIndex(_ellipseIndices);
+  geo.attributes.position.needsUpdate = true;
+  geo.computeBoundingSphere();
 }
 
 /**
@@ -57,16 +100,11 @@ export function showWaterSpray(worldX, worldZ, params) {
     return;
   }
   sprayIndicator.position.set(worldX, ROOM_H - 0.02, worldZ);
-  sprayIndicator.scale.set(params.majorR, params.minorR, 1);
-  // Lay flat on ceiling (rotate -90° around X), then rotate around world Y
-  // for spray direction. Negate angle because Three.js Y rotation goes
-  // from +X toward -Z (right-hand rule), but sprayAngle=atan2(dz,dx)
-  // points from +X toward +Z.
-  const qFlat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-  const qDir = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -params.sprayAngle);
-  sprayIndicator.quaternion.copy(qDir.multiply(qFlat));
+  sprayIndicator.scale.set(1, 1, 1);
+  sprayIndicator.quaternion.identity();
+  buildEllipseGeometry(worldX, worldZ, params.majorR, params.minorR, params.sprayAngle);
   // Fade opacity with distance
-  sprayIndicator.material.opacity = 0.15 + 0.35 * params.strengthFactor;
+  sprayMat.opacity = 0.15 + 0.35 * params.strengthFactor;
   sprayIndicator.visible = true;
 }
 

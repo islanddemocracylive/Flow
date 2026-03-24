@@ -124,7 +124,7 @@ export function setupAdminPanel(sim, state, net) {
       btnPlay.textContent = 'Stop Scenario';
       btnPlay.classList.add('playing');
     } else {
-      btnPlay.textContent = 'Play Scenario';
+      btnPlay.textContent = 'Run Scenario';
       btnPlay.classList.remove('playing');
     }
   }
