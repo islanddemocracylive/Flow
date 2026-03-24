@@ -70,22 +70,12 @@ header h1 {
   background: #0f3460;
 }
 
-.header-btn.share-btn {
+.header-btn.simulator-btn {
   border-color: #3a6ea5;
   color: #6cb4ee;
 }
 
-.header-btn.share-btn:hover {
-  background: #0f3460;
-}
-
-.header-btn.viewer-link {
-  color: #6cb4ee;
-  font-size: 0.8rem;
-}
-
-.header-btn.viewer-link:hover {
-  color: #9dd4ff;
+.header-btn.simulator-btn:hover {
   background: #0f3460;
 }
 
@@ -488,6 +478,27 @@ select {
   font-size: 0.8rem;
   color: #888;
   margin-bottom: 16px;
+}
+
+.open-viewer-btn {
+  display: block;
+  width: 100%;
+  padding: 10px 0;
+  margin-bottom: 18px;
+  background: #1a6a2e;
+  border: 1px solid #2a8a3e;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: bold;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.open-viewer-btn:hover {
+  background: #2a8a3e;
 }
 
 .share-modal canvas {

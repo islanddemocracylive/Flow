@@ -101,13 +101,6 @@ viewTabs.forEach(tab => {
   });
 });
 
-// ── Open Simulator link: save scenario to localStorage for simulator ──
-const openViewerLink = document.getElementById('open-viewer-link');
-if (openViewerLink) {
-  openViewerLink.addEventListener('click', () => {
-    localStorage.setItem('flow_viewer_scenario', JSON.stringify(sim.toScenarioData()));
-  });
-}
 
 // ── Canvas sizing ─────────────────────────────────────────
 window.addEventListener('resize', () => {
@@ -122,7 +115,7 @@ resizeCanvas();
 // ── Setup input + UI ──────────────────────────────────────
 setupInput2D(sim, state, handleDesignClick);
 setupAdminPanel(sim, state, net);
-setupShareModal();
+setupShareModal(sim);
 
 // ── 3D design click handling (orbit view) ─────────────────
 const room3dContainer = document.getElementById('room3d-container');

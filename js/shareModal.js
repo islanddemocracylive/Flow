@@ -1,13 +1,14 @@
 /**
- * Share Simulator modal – URL display, QR code, and copy functionality.
+ * Open Simulator modal – open in new window, URL display, QR code, copy.
  */
 
-export function setupShareModal() {
+export function setupShareModal(sim) {
   const shareModal = document.getElementById('share-modal');
   const shareUrlInput = document.getElementById('share-url');
   const btnShareViewer = document.getElementById('btn-share-viewer');
   const btnCopyUrl = document.getElementById('btn-copy-url');
   const shareCopyStatus = document.getElementById('share-copy-status');
+  const openViewerLink = document.getElementById('open-viewer-link');
 
   if (!shareModal || !btnShareViewer) return;
 
@@ -15,6 +16,7 @@ export function setupShareModal() {
     return location.origin + '/viewer.html';
   }
 
+  // Open Simulator button in header → show modal
   btnShareViewer.addEventListener('click', () => {
     const url = getViewerUrl();
     shareUrlInput.value = url;
@@ -32,6 +34,13 @@ export function setupShareModal() {
       });
     }
   });
+
+  // "Open in New Window" link inside modal – save scenario first
+  if (openViewerLink && sim) {
+    openViewerLink.addEventListener('click', () => {
+      localStorage.setItem('flow_viewer_scenario', JSON.stringify(sim.toScenarioData()));
+    });
+  }
 
   btnCopyUrl.addEventListener('click', () => {
     navigator.clipboard.writeText(shareUrlInput.value).then(() => {

@@ -14,8 +14,7 @@
         <p class="subtitle">Create or load a fire scenario. Share to a separate device or open the simulator in a separate window. Click play to preview or run the simulation.</p>
       </div>
       <div class="header-actions">
-        <button id="btn-share-viewer" class="header-btn share-btn" title="Copy simulator link / QR code">Share</button>
-        <a id="open-viewer-link" class="header-btn viewer-link" href="viewer.html" target="_blank">Open Simulator &#8599;</a>
+        <button id="btn-share-viewer" class="header-btn simulator-btn" title="Share or open the simulator">Open Simulator</button>
         <button id="btn-reset" class="header-btn reset-btn" title="Reset fire">Reset</button>
         <button id="btn-play" class="header-btn play-btn">Play Scenario</button>
       </div>
@@ -122,12 +121,13 @@
 
   <button id="toggle-panel-btn" aria-label="Toggle controls">&#9881;</button>
 
-  <!-- Share Simulator modal -->
+  <!-- Open Simulator modal -->
   <div id="share-modal" class="share-modal-overlay" style="display:none">
     <div class="share-modal">
       <button id="share-modal-close" class="share-modal-close">&times;</button>
-      <h3>Simulator Link</h3>
-      <p class="share-modal-desc">Share this URL or scan the QR code to open the simulator on another device.</p>
+      <h3>Open Simulator</h3>
+      <p class="share-modal-desc">Open in a new window or share the link to another device.</p>
+      <a id="open-viewer-link" class="open-viewer-btn" href="viewer.html" target="_blank">Open in New Window &#8599;</a>
       <canvas id="share-qr" width="200" height="200"></canvas>
       <div class="share-url-row">
         <input id="share-url" type="text" readonly>
