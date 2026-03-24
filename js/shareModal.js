@@ -1,5 +1,5 @@
 /**
- * Share Viewer modal – URL display, QR code, and copy functionality.
+ * Share Simulator modal – URL display, QR code, and copy functionality.
  */
 
 export function setupShareModal() {

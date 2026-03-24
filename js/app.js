@@ -15,6 +15,7 @@ import { SimNetwork } from './network.js';
 import { render2D, resizeCanvas } from './render2d.js';
 import { setupInput2D } from './input2d.js';
 import { setupAdminPanel, updateStats } from './adminPanel.js';
+import { setupShareModal } from './shareModal.js';
 import room3d from './room3d/index.js';
 import { camera } from './room3d/scene.js';
 
@@ -121,6 +122,7 @@ resizeCanvas();
 // ── Setup input + UI ──────────────────────────────────────
 setupInput2D(sim, state, handleDesignClick);
 setupAdminPanel(sim, state, net);
+setupShareModal();
 
 // ── 3D design click handling (orbit view) ─────────────────
 const room3dContainer = document.getElementById('room3d-container');
