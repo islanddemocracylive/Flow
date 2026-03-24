@@ -6,15 +6,25 @@ import { ROOM_W, ROOM_D, ROOM_H, DOOR_W, DOOR_H } from '../constants.js';
 import { wallMat, edgeMat, cornerMat, doorFrameMat } from './materials.js';
 import { scene } from './scene.js';
 
-// Wall group – rebuilt when doors change
+// Wall group – rebuilt when doors change (hidden in orbit mode)
 export const wallGroup = new THREE.Group();
 if (scene) scene.add(wallGroup);
 
+// Door frame group – always visible (separate from walls for orbit mode)
+export const doorFrameGroup = new THREE.Group();
+if (scene) scene.add(doorFrameGroup);
+
 export function buildWalls(sim) {
-  // Clear previous
+  // Clear previous walls
   while (wallGroup.children.length > 0) {
     const c = wallGroup.children[0];
     wallGroup.remove(c);
+    if (c.geometry) c.geometry.dispose();
+  }
+  // Clear previous door frames
+  while (doorFrameGroup.children.length > 0) {
+    const c = doorFrameGroup.children[0];
+    doorFrameGroup.remove(c);
     if (c.geometry) c.geometry.dispose();
   }
 
@@ -138,7 +148,7 @@ function buildWallWithDoors(wallName, wallWidth, wallHeight, transform, allDoors
       } else if (wallName === 'back') {
         fm.position.set(fp.wp, transform.py + fp.ly, transform.pz - 0.01);
       }
-      wallGroup.add(fm);
+      doorFrameGroup.add(fm);
     }
   }
 

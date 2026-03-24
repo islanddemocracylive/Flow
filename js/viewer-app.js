@@ -152,6 +152,10 @@ function loop() {
 
 requestAnimationFrame(loop);
 
+// Initial + dynamic resize
+if (room3d.available) {
+  setTimeout(() => room3d.onResize(), 0);
+}
 window.addEventListener('resize', () => {
   if (room3d.available) room3d.onResize();
 });

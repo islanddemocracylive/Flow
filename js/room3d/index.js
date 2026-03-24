@@ -8,7 +8,7 @@
 import { ROOM_W, ROOM_D, ROOM_H } from '../constants.js';
 import { heatToColor } from '../colorUtils.js';
 import { container, scene, camera, renderer, fireLight } from './scene.js';
-import { buildWalls, wallGroup } from './walls.js';
+import { buildWalls, wallGroup, doorFrameGroup } from './walls.js';
 import { panelMeshes } from './ceiling.js';
 import { buildVentMeshes } from './vents.js';
 import { buildObstacleMeshes } from './obstacles.js';
