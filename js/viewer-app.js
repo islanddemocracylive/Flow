@@ -28,7 +28,11 @@ const statusEl = document.getElementById('status');
 const net = new SimNetwork('viewer');
 
 net.onHeatData = (heatArray) => {
-  sim.heat.set(heatArray);
+  // Clamp incoming values to [0,1] to guard against corrupted data
+  for (let i = 0; i < heatArray.length; i++) {
+    const v = heatArray[i];
+    sim.heat[i] = v > 0 ? (v < 1 ? v : 1) : 0; // also handles NaN → 0
+  }
 };
 
 net.onParams = (params) => {

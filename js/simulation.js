@@ -216,7 +216,8 @@ export class FireSimulation {
 
         const falloff = 1.0 - Math.sqrt(ellipseDist);
         const i = this.idx(x, y);
-        this.heat[i] = Math.max(0, this.heat[i] - suppressionRate * falloff * dt);
+        const cooled = this.heat[i] - suppressionRate * falloff * dt;
+        this.heat[i] = cooled > 0 ? cooled : 0; // also handles NaN → 0
       }
     }
   }

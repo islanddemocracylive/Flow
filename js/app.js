@@ -145,7 +145,9 @@ if (room3dContainer && camera && typeof THREE !== 'undefined') {
 
   room3dContainer.addEventListener('contextmenu', e => e.preventDefault());
 
-  room3dContainer.addEventListener('mousedown', (e) => {
+  // Use pointer events – Three.js r128 OrbitControls uses pointerdown and
+  // calls preventDefault(), which suppresses compatibility mouse events.
+  room3dContainer.addEventListener('pointerdown', (e) => {
     clickStartX = e.clientX;
     clickStartY = e.clientY;
   });
@@ -187,8 +189,8 @@ if (room3dContainer && camera && typeof THREE !== 'undefined') {
     return best;
   }
 
-  // ── Hover highlight on mousemove ──
-  room3dContainer.addEventListener('mousemove', (e) => {
+  // ── Hover highlight on pointermove ──
+  room3dContainer.addEventListener('pointermove', (e) => {
     if (!room3d.isOrbitMode() || !state.designMode) {
       room3d.hideHoverCell();
       return;
@@ -229,12 +231,12 @@ if (room3dContainer && camera && typeof THREE !== 'undefined') {
     }
   });
 
-  room3dContainer.addEventListener('mouseleave', () => {
+  room3dContainer.addEventListener('pointerleave', () => {
     room3d.hideHoverCell();
   });
 
   // ── Click handling ──
-  room3dContainer.addEventListener('mouseup', (e) => {
+  room3dContainer.addEventListener('pointerup', (e) => {
     if (!room3d.isOrbitMode() || !state.designMode) return;
 
     // Only count as click if mouse didn't move much (not an orbit drag)

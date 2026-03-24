@@ -8,7 +8,7 @@
  * Returns { r, g, b } in range [0, 255].
  */
 export function heatToRGB(heat) {
-  if (heat <= 0) return { r: 20, g: 20, b: 28 };
+  if (!(heat > 0)) return { r: 20, g: 20, b: 28 }; // covers 0, negative, NaN, undefined
 
   const t = Math.min(heat, 1);
   let r, g, b;
@@ -45,7 +45,7 @@ export function heatToRGB(heat) {
 const BASE_COLOR = null; // lazily initialized
 
 export function heatToColor(heat) {
-  if (heat <= 0) return new THREE.Color(0x1a1a24);
+  if (!(heat > 0)) return new THREE.Color(0x1a1a24); // covers 0, negative, NaN, undefined
 
   const t = Math.min(heat, 1);
   let r, g, b;
