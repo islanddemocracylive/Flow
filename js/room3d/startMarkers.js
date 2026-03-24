@@ -38,10 +38,9 @@ export function buildStartMarkers(sim) {
 
   const geo = new THREE.PlaneGeometry(0.7, 0.7);
 
-  for (const posKey of sim.startLocations) {
-    const [xs, ys] = posKey.split(',');
-    const x = parseInt(xs, 10);
-    const y = parseInt(ys, 10);
+  for (const idx of sim.startLocations) {
+    const x = idx % sim.cols;
+    const y = Math.floor(idx / sim.cols);
 
     const mesh = new THREE.Mesh(geo, markerMat);
     mesh.rotation.x = Math.PI / 2;
