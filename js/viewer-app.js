@@ -8,7 +8,7 @@ import { GRID_COLS, GRID_ROWS, DRAG_THRESHOLD } from './constants.js';
 import { FireSimulation } from './simulation.js';
 import { SimNetwork } from './network.js';
 import room3d from './room3d/index.js';
-import { enableFPCamera } from './room3d/fpCamera.js';
+import { enableFPCamera, setSprayScreenPosition, clearSprayScreenPosition } from './room3d/fpCamera.js';
 
 // Create simulation as a data container (no stepping)
 const sim = new FireSimulation(GRID_COLS, GRID_ROWS);
@@ -87,12 +87,14 @@ if (room3dContainer) {
     sprayState.mouse3dDown = false;
     sprayState.dragDistance3d = 0;
     room3d.hideWaterSpray();
+    clearSprayScreenPosition();
   });
 
   room3dContainer.addEventListener('mouseleave', () => {
     sprayState.mouse3dDown = false;
     sprayState.dragDistance3d = 0;
     room3d.hideWaterSpray();
+    clearSprayScreenPosition();
   });
 
   // 2-finger water spray (touch)
@@ -120,6 +122,7 @@ if (room3dContainer) {
       sprayState.mouse3dDown = false;
       sprayState.dragDistance3d = 0;
       room3d.hideWaterSpray();
+      clearSprayScreenPosition();
     }
   }, { passive: true });
 }
@@ -137,10 +140,18 @@ function loop() {
         if (sprayParams) {
           net.sendWater(hit.worldX, hit.worldZ, playerPos);
           room3d.showWaterSpray(hit.worldX, hit.worldZ, sprayParams);
+          // Feed mouse NDC to camera for edge-scroll
+          const rect = room3dContainer.getBoundingClientRect();
+          const ndcX = ((sprayState.mouseX3d - rect.left) / rect.width) * 2 - 1;
+          const ndcY = -((sprayState.mouseY3d - rect.top) / rect.height) * 2 + 1;
+          setSprayScreenPosition(ndcX, ndcY);
         } else {
           room3d.hideWaterSpray();
+          clearSprayScreenPosition();
         }
       }
+    } else {
+      clearSprayScreenPosition();
     }
 
     room3d.updatePanels(sim);

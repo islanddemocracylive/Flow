@@ -50,6 +50,13 @@ let lastVentKeyForStart = '';
 // Whether FP camera is active (listeners attached)
 let fpEnabled = false;
 
+// Spray edge-scroll: when spraying near screen edges, gently rotate the view
+let sprayEdgeActive = false;
+let sprayEdgeNdcX = 0;
+let sprayEdgeNdcY = 0;
+const EDGE_DEAD_ZONE = 0.4;   // no rotation inside central 40%
+const EDGE_TURN_SPEED = 1.0;  // max rad/sec at screen edge
+
 // ── Event handler functions (named so we can add/remove) ──
 
 function onKeyDown(e) {
@@ -279,6 +286,21 @@ export function updateCamera(sim) {
 
   fpPosition.y = EYE_HEIGHT;
 
+  // Edge-scroll: gently rotate view toward spray when near screen edges
+  if (sprayEdgeActive) {
+    const absX = Math.abs(sprayEdgeNdcX);
+    if (absX > EDGE_DEAD_ZONE) {
+      const t = (absX - EDGE_DEAD_ZONE) / (1 - EDGE_DEAD_ZONE);
+      fpYaw -= Math.sign(sprayEdgeNdcX) * t * EDGE_TURN_SPEED * dt;
+    }
+    const absY = Math.abs(sprayEdgeNdcY);
+    if (absY > EDGE_DEAD_ZONE) {
+      const t = (absY - EDGE_DEAD_ZONE) / (1 - EDGE_DEAD_ZONE);
+      fpPitch += Math.sign(sprayEdgeNdcY) * t * EDGE_TURN_SPEED * dt;
+      fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
+    }
+  }
+
   camera.position.copy(fpPosition);
 
   const lookX = fpPosition.x + forwardX * Math.cos(fpPitch);
@@ -294,4 +316,16 @@ export function resetToStart(sim) {
 export function getPlayerPosition() {
   if (!fpPosition) return { x: 0, y: EYE_HEIGHT, z: 0 };
   return { x: fpPosition.x, y: fpPosition.y, z: fpPosition.z };
+}
+
+/** Call each frame while spraying with the mouse's NDC position (-1..1). */
+export function setSprayScreenPosition(ndcX, ndcY) {
+  sprayEdgeActive = true;
+  sprayEdgeNdcX = ndcX;
+  sprayEdgeNdcY = ndcY;
+}
+
+/** Call when spraying stops. */
+export function clearSprayScreenPosition() {
+  sprayEdgeActive = false;
 }
