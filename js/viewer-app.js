@@ -1,6 +1,7 @@
 /**
- * Viewer application – receives simulation state over WebSocket
- * and renders the fullscreen 3D room view.
+ * Simulator application – fullscreen 3D firefighter experience.
+ * Receives fire state over WebSocket from the controller and
+ * sends water spray data back to affect the simulation.
  */
 
 import { GRID_COLS, GRID_ROWS, DRAG_THRESHOLD } from './constants.js';
@@ -13,7 +14,7 @@ import { enableFPCamera } from './room3d/fpCamera.js';
 const sim = new FireSimulation(GRID_COLS, GRID_ROWS);
 window.fireSim = sim;
 
-// Load scenario from localStorage (saved by admin when "Open Viewer" is clicked)
+// Load scenario from localStorage (saved by admin when "Open Simulator" is clicked)
 try {
   const saved = localStorage.getItem('flow_viewer_scenario');
   if (saved) {
@@ -126,7 +127,7 @@ const FIXED_DT = 1 / 30;
 // Render loop
 function loop() {
   if (room3d.available) {
-    // Apply water spray
+    // Apply water spray (locally for visuals + send to controller for simulation)
     if (sprayState.mouse3dDown && sprayState.dragDistance3d > DRAG_THRESHOLD) {
       const hit = room3d.raycastCeiling(sprayState.mouseX3d, sprayState.mouseY3d);
       if (hit) {
@@ -134,6 +135,7 @@ function loop() {
         const sprayParams = sim.getSprayParams(hit.gridX, hit.gridY, playerPos);
         if (sprayParams) {
           sim.applyWater(hit.gridX, hit.gridY, FIXED_DT, playerPos);
+          net.sendWater(hit.gridX, hit.gridY, FIXED_DT, playerPos);
           room3d.showWaterSpray(hit.gridX, hit.gridY, sprayParams);
         } else {
           room3d.hideWaterSpray();

@@ -6,7 +6,7 @@
  *   2. 3D view: orbit camera for visual inspection of the room design
  *
  * Fire simulation runs in whichever view is active when Play is pressed.
- * The first-person firefighter experience lives in viewer.html.
+ * The first-person firefighter experience lives in the Simulator (viewer.html).
  */
 
 import { GRID_COLS, GRID_ROWS, ROOM_W, ROOM_D, ROOM_H } from './constants.js';
@@ -27,7 +27,14 @@ window.fireSim = sim;
 // ── Network (remote viewing) ────────────────────────────
 let net = null;
 let lastNetSend = 0;
-try { net = new SimNetwork('controller'); } catch (e) { /* no server */ }
+try {
+  net = new SimNetwork('controller');
+  // Apply water spray received from simulator clients
+  net.onWater = (msg) => {
+    const playerPos = { x: msg.playerX, z: msg.playerZ };
+    sim.applyWater(msg.gridX, msg.gridY, msg.dt, playerPos);
+  };
+} catch (e) { /* no server */ }
 
 // ── Shared mutable state ──────────────────────────────────
 const state = {
@@ -93,7 +100,7 @@ viewTabs.forEach(tab => {
   });
 });
 
-// ── Open Viewer link: save scenario to localStorage for viewer ──
+// ── Open Simulator link: save scenario to localStorage for simulator ──
 const openViewerLink = document.getElementById('open-viewer-link');
 if (openViewerLink) {
   openViewerLink.addEventListener('click', () => {

@@ -57,7 +57,6 @@ export function setupAdminPanel(sim, state, net) {
   const scenarioSelect = document.getElementById('scenario-select');
   const scenarioName = document.getElementById('scenario-name');
   const btnSave = document.getElementById('btn-save-scenario');
-  const btnLoad = document.getElementById('btn-load-scenario');
   const btnDelete = document.getElementById('btn-delete-scenario');
 
   function refreshScenarioList() {
@@ -81,7 +80,18 @@ export function setupAdminPanel(sim, state, net) {
 
   if (scenarioSelect) {
     scenarioSelect.addEventListener('change', () => {
-      if (scenarioName) scenarioName.value = scenarioSelect.value;
+      const name = scenarioSelect.value;
+      if (scenarioName) scenarioName.value = name;
+      // Auto-load scenario on selection
+      if (name) {
+        const data = loadScenario(name);
+        if (data) {
+          sim.loadScenarioData(data);
+          syncSliders(sim);
+          state.playing = false;
+          updatePlayStopButtons();
+        }
+      }
     });
   }
 
@@ -91,20 +101,6 @@ export function setupAdminPanel(sim, state, net) {
     saveScenario(name, sim.toScenarioData());
     refreshScenarioList();
     if (scenarioSelect) scenarioSelect.value = name;
-  });
-
-  if (btnLoad) btnLoad.addEventListener('click', () => {
-    const name = scenarioSelect ? scenarioSelect.value : '';
-    if (!name) { alert('Select a scenario to load'); return; }
-    const data = loadScenario(name);
-    if (data) {
-      sim.loadScenarioData(data);
-      if (scenarioName) scenarioName.value = name;
-      // Update sliders to match loaded params
-      syncSliders(sim);
-      state.playing = false;
-      updatePlayStopButtons();
-    }
   });
 
   if (btnDelete) btnDelete.addEventListener('click', () => {

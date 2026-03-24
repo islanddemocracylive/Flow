@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fire Training Simulator</title>
+  <title>Flow State</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="app">
     <header>
-      <h1>Fire Training Simulator</h1>
-      <p class="subtitle">Design room scenarios in 2D or 3D, then play them to watch fire spread. Open the Viewer for the firefighter experience.</p>
+      <h1>Flow State</h1>
+      <p class="subtitle">Design Room Scenarios in 2D or 3D. Open the Simulator to run the Firefighter experience.</p>
     </header>
 
     <div id="mobile-stats" class="mobile-stats" style="display:none;">
@@ -22,7 +22,7 @@
         <div id="view-tabs">
           <button class="view-tab active" data-view="2d">2D</button>
           <button class="view-tab" data-view="3d">3D</button>
-          <a id="open-viewer-link" class="view-tab viewer-link" href="viewer.html" target="_blank">Open Viewer &#8599;</a>
+          <a id="open-viewer-link" class="view-tab viewer-link" href="viewer.html" target="_blank">Open Simulator &#8599;</a>
         </div>
         <div id="view-2d" class="view-panel active">
           <canvas id="simulation-canvas"></canvas>
@@ -48,7 +48,6 @@
           </div>
           <div class="button-row" style="margin-top:6px">
             <button id="btn-save-scenario" class="action-btn">Save</button>
-            <button id="btn-load-scenario" class="action-btn">Load</button>
             <button id="btn-delete-scenario" class="action-btn danger">Delete</button>
           </div>
         </div>

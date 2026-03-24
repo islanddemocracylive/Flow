@@ -11,6 +11,7 @@ export class SimNetwork {
     this.onHeatData = null;
     this.onParams = null;
     this.onReset = null;
+    this.onWater = null;
     this._connect();
   }
 
@@ -32,6 +33,7 @@ export class SimNetwork {
           const msg = JSON.parse(event.data);
           if (msg.type === 'params' && this.onParams) this.onParams(msg);
           if (msg.type === 'reset' && this.onReset) this.onReset();
+          if (msg.type === 'water' && this.onWater) this.onWater(msg);
         } catch (e) { /* ignore bad JSON */ }
       }
     };
@@ -61,6 +63,17 @@ export class SimNetwork {
   sendReset() {
     if (this.connected && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'reset' }));
+    }
+  }
+
+  sendWater(gridX, gridY, dt, playerPos) {
+    if (this.connected && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'water',
+        gridX, gridY, dt,
+        playerX: playerPos.x,
+        playerZ: playerPos.z,
+      }));
     }
   }
 }
