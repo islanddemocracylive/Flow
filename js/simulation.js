@@ -149,7 +149,7 @@ export class FireSimulation {
     // On the ceiling, the cone intersects as an ellipse when spraying at an angle.
     // Minor axis (perpendicular to spray direction): cone radius.
     // Major axis (along spray direction): stretches by 1/cos(incidence).
-    const cosAngle = Math.max(0.15, Math.cos(incidenceAngle));
+    const cosAngle = Math.max(0.35, Math.cos(incidenceAngle));
     const majorR = Math.max(1.0, coneRadius / cosAngle);
     const minorR = Math.max(1.0, coneRadius);
 
