@@ -139,30 +139,40 @@ export class FireSimulation {
     const halfAngleDeg = baseDeg * (this.waterRadius / 2) * Math.sqrt(100 / this.sprayPSI);
     const halfAngleRad = halfAngleDeg * Math.PI / 180;
 
-    // Spray radius = distance along the beam × tan(half-angle)
-    // Directly overhead (5ft): ~0.7ft. At 15ft away: ~2.1ft.
-    const coneRadius = totalDist * Math.tan(halfAngleRad);
-
     // Incidence angle: 0 = directly overhead, π/2 = horizontal
     const incidenceAngle = Math.atan2(horizDist, verticalDist);
 
-    // On the ceiling, the cone intersects as an ellipse when spraying at an angle.
-    // Minor axis (perpendicular to spray direction): cone radius.
-    // Major axis (along spray direction): stretches by 1/cos(incidence).
-    const cosAngle = Math.max(0.35, Math.cos(incidenceAngle));
-    const majorR = Math.max(1.0, coneRadius / cosAngle);
+    // Cone radius perpendicular to beam axis (for minor axis on ceiling)
+    const coneRadius = totalDist * Math.tan(halfAngleRad);
+
+    // True cone-ceiling intersection: trace each edge ray in the vertical
+    // plane to find where they hit the ceiling. The near edge (toward player)
+    // and far edge (away from player) hit at different horizontal distances
+    // from directly overhead, producing an asymmetric ellipse.
+    const nearAngle = incidenceAngle - halfAngleRad; // can be negative
+    const farAngle  = incidenceAngle + halfAngleRad;
+
+    // Clamp far angle so tan doesn't blow up (>~87° means spray barely
+    // reaches ceiling on that edge)
+    const clampedFar = Math.min(farAngle, Math.PI / 2 - 0.05);
+    const nearDist = verticalDist * Math.tan(nearAngle);
+    const farDist  = verticalDist * Math.tan(clampedFar);
+
+    // Ellipse major axis and center from the two edge intercepts
+    const majorR = Math.max(1.0, (farDist - nearDist) / 2);
     const minorR = Math.max(1.0, coneRadius);
+    const ellipseCenterDist = (nearDist + farDist) / 2;
+
+    // Offset from the hit point to the true ellipse center along the spray direction
+    const centerOffset = ellipseCenterDist - horizDist;
 
     // Spray direction angle on the ceiling
     const sprayAngle = Math.atan2(dz, dx);
 
-    // Strength: the same volume of water spreads over a larger ellipse area
-    // at distance, so per-cell suppression naturally decreases. We don't
-    // apply an additional distance penalty — the cone geometry handles it.
-    // Only apply a mild dropoff near max reach where the stream breaks apart.
+    // Strength: mild dropoff near max reach where the stream breaks apart.
     const reachRatio = totalDist / maxReach;
     const strengthFactor = reachRatio > 0.7
-      ? 1.0 - (reachRatio - 0.7) / 0.3   // linear fade from 70% to 100% of max reach
+      ? 1.0 - (reachRatio - 0.7) / 0.3
       : 1.0;
 
     return {
@@ -170,6 +180,7 @@ export class FireSimulation {
       minorR,
       sprayAngle,
       strengthFactor,
+      centerOffset,
     };
   }
 
@@ -207,13 +218,18 @@ export class FireSimulation {
     const peakDensity = 3 * gps / sprayArea;              // gal/s/sqft at center
     const suppressionRate = peakDensity * COOLING_FACTOR * strengthMul;
 
+    // Shift from hit point to true ellipse center along the spray direction
+    const off = params ? (params.centerOffset || 0) : 0;
+    const sprayX = worldX + Math.cos(angle) * off;
+    const sprayZ = worldZ + Math.sin(angle) * off;
+
     const cosA = Math.cos(-angle);
     const sinA = Math.sin(-angle);
     const rMax = Math.ceil(Math.max(majorR, minorR));
 
     // Grid cell containing the spray center
-    const cx = Math.floor(worldX);
-    const cz = Math.floor(worldZ);
+    const cx = Math.floor(sprayX);
+    const cz = Math.floor(sprayZ);
 
     for (let dy = -rMax; dy <= rMax; dy++) {
       for (let dx = -rMax; dx <= rMax; dx++) {
@@ -222,8 +238,8 @@ export class FireSimulation {
         if (gx < 0 || gx >= this.cols || gy < 0 || gy >= this.rows) continue;
 
         // Sub-cell precision: distance from cell center to spray center
-        const offX = (gx + 0.5) - worldX;
-        const offZ = (gy + 0.5) - worldZ;
+        const offX = (gx + 0.5) - sprayX;
+        const offZ = (gy + 0.5) - sprayZ;
 
         // Rotate offset into ellipse-local coords (aligned with spray direction)
         const lx = offX * cosA - offZ * sinA;

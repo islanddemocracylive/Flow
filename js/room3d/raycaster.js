@@ -99,10 +99,14 @@ export function showWaterSpray(worldX, worldZ, params) {
     sprayIndicator.visible = false;
     return;
   }
-  sprayIndicator.position.set(worldX, ROOM_H - 0.02, worldZ);
+  // Shift from hit point to true ellipse center along the spray direction
+  const off = params.centerOffset || 0;
+  const cx = worldX + Math.cos(params.sprayAngle) * off;
+  const cz = worldZ + Math.sin(params.sprayAngle) * off;
+  sprayIndicator.position.set(cx, ROOM_H - 0.02, cz);
   sprayIndicator.scale.set(1, 1, 1);
   sprayIndicator.quaternion.identity();
-  buildEllipseGeometry(worldX, worldZ, params.majorR, params.minorR, params.sprayAngle);
+  buildEllipseGeometry(cx, cz, params.majorR, params.minorR, params.sprayAngle);
   // Fade opacity with distance
   sprayMat.opacity = 0.15 + 0.35 * params.strengthFactor;
   sprayIndicator.visible = true;
