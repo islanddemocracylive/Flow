@@ -1,8 +1,12 @@
 /**
  * Wall geometry building with door cutouts and frames.
+ *
+ * Door cells are 1ft wide (matching the grid). Adjacent door cells on
+ * the same wall merge into a single opening with frames only on the
+ * outer edges.
  */
 
-import { ROOM_W, ROOM_D, ROOM_H, DOOR_W, DOOR_H } from '../constants.js';
+import { ROOM_W, ROOM_D, ROOM_H, DOOR_H } from '../constants.js';
 import { wallMat, edgeMat, cornerMat, doorFrameMat } from './materials.js';
 import { scene } from './scene.js';
 
@@ -13,6 +17,38 @@ if (scene) scene.add(wallGroup);
 // Door frame group – always visible (separate from walls for orbit mode)
 export const doorFrameGroup = new THREE.Group();
 if (scene) scene.add(doorFrameGroup);
+
+/**
+ * Merge adjacent door cells on a wall into contiguous runs.
+ * Returns array of { start, end } where the opening spans [start, end] in world units.
+ */
+function mergeDoorRuns(doors, wallName) {
+  // Get the positions along the wall for each door cell
+  const positions = doors
+    .filter(d => d.wall === wallName)
+    .map(d => (wallName === 'far' || wallName === 'back') ? d.x : d.y)
+    .sort((a, b) => a - b);
+
+  if (positions.length === 0) return [];
+
+  // Merge consecutive integers into runs
+  const runs = [];
+  let runStart = positions[0];
+  let runEnd = positions[0];
+
+  for (let i = 1; i < positions.length; i++) {
+    if (positions[i] === runEnd + 1) {
+      runEnd = positions[i];
+    } else {
+      runs.push({ start: runStart, end: runEnd + 1 }); // end is exclusive (world units)
+      runStart = positions[i];
+      runEnd = positions[i];
+    }
+  }
+  runs.push({ start: runStart, end: runEnd + 1 });
+
+  return runs;
+}
 
 export function buildWalls(sim) {
   // Clear previous walls
@@ -37,48 +73,20 @@ export function buildWalls(sim) {
 }
 
 /**
- * Compute the door's world-space position from its grid coords.
- * Grid (x, y) maps to world (x + 0.5, z = y + 0.5).
- */
-function doorWorldPos(door, wallName) {
-  if (wallName === 'far' || wallName === 'back') return door.x + 0.5;
-  return door.y + 0.5;
-}
-
-/**
- * Convert a world-space door position to the Shape's local X coordinate.
- *
- * The Shape is centered at transform.px (or pz) and then rotated by transform.ry.
- * THREE.js rotation around Y maps local X → world offset by cos(ry) on X and -sin(ry) on Z.
- * We invert this to find the localX that produces the desired world position.
- *
- *   far  (ry=0):     world X offset = +localX   →  localX = worldOffset
- *   back (ry=PI):    world X offset = -localX   →  localX = -worldOffset
- *   left (ry=PI/2):  world Z offset = -localX   →  localX = -worldOffset
- *   right(ry=-PI/2): world Z offset = +localX   →  localX = worldOffset
+ * Convert a world-space position to the Shape's local X coordinate.
  */
 function worldToShapeLocalX(worldPos, wallCenter, wallName) {
   const offset = worldPos - wallCenter;
   if (wallName === 'back' || wallName === 'left') {
-    return -offset; // rotation flips the axis
+    return -offset;
   }
   return offset;
 }
 
-/**
- * Convert back from Shape local X to world position (for frame placement).
- */
-function shapeLocalXToWorld(localX, wallCenter, wallName) {
-  if (wallName === 'back' || wallName === 'left') {
-    return wallCenter - localX;
-  }
-  return wallCenter + localX;
-}
-
 function buildWallWithDoors(wallName, wallWidth, wallHeight, transform, allDoors) {
-  const doors = allDoors.filter(d => d.wall === wallName);
+  const runs = mergeDoorRuns(allDoors, wallName);
 
-  if (doors.length === 0) {
+  if (runs.length === 0) {
     const geo = new THREE.PlaneGeometry(wallWidth, wallHeight);
     const mesh = new THREE.Mesh(geo, wallMat);
     mesh.position.set(transform.px, transform.py, transform.pz);
@@ -95,8 +103,8 @@ function buildWallWithDoors(wallName, wallWidth, wallHeight, transform, allDoors
 
   // Wall center along its length axis
   const wallCenter = (wallName === 'far' || wallName === 'back')
-    ? transform.px   // X-axis center
-    : transform.pz;  // Z-axis center
+    ? transform.px
+    : transform.pz;
 
   // Wall with door openings – use shape with holes
   const shape = new THREE.Shape();
@@ -106,12 +114,17 @@ function buildWallWithDoors(wallName, wallWidth, wallHeight, transform, allDoors
   shape.lineTo(-wallWidth / 2, wallHeight / 2);
   shape.lineTo(-wallWidth / 2, -wallHeight / 2);
 
-  for (const door of doors) {
-    const worldP = doorWorldPos(door, wallName);
-    const localX = worldToShapeLocalX(worldP, wallCenter, wallName);
+  for (const run of runs) {
+    // run.start / run.end are in world units along the wall
+    const worldLeft = run.start;
+    const worldRight = run.end;
+    const worldCenter = (worldLeft + worldRight) / 2;
+    const openingWidth = worldRight - worldLeft;
 
-    const holeLeft = localX - DOOR_W / 2;
-    const holeRight = localX + DOOR_W / 2;
+    const localLeft = worldToShapeLocalX(worldLeft, wallCenter, wallName);
+    const localRight = worldToShapeLocalX(worldRight, wallCenter, wallName);
+    const holeLeft = Math.min(localLeft, localRight);
+    const holeRight = Math.max(localLeft, localRight);
     const holeBottom = -wallHeight / 2;
     const holeTop = holeBottom + DOOR_H;
 
@@ -123,16 +136,16 @@ function buildWallWithDoors(wallName, wallWidth, wallHeight, transform, allDoors
     hole.lineTo(holeLeft, holeBottom);
     shape.holes.push(hole);
 
-    // Door frame – positioned in world space directly
+    // Door frame around the merged opening
     const frameThickness = 0.15;
-    const frameWorldCenter = worldP;
-    const frameWorldLeft = worldP - DOOR_W / 2;
-    const frameWorldRight = worldP + DOOR_W / 2;
 
     const frameParts = [
-      { w: frameThickness, h: DOOR_H, wp: frameWorldLeft - frameThickness / 2, ly: holeBottom + DOOR_H / 2 },
-      { w: frameThickness, h: DOOR_H, wp: frameWorldRight + frameThickness / 2, ly: holeBottom + DOOR_H / 2 },
-      { w: DOOR_W + frameThickness * 2, h: frameThickness, wp: frameWorldCenter, ly: holeTop + frameThickness / 2 },
+      // Left jamb
+      { w: frameThickness, h: DOOR_H, wp: worldLeft - frameThickness / 2, ly: holeBottom + DOOR_H / 2 },
+      // Right jamb
+      { w: frameThickness, h: DOOR_H, wp: worldRight + frameThickness / 2, ly: holeBottom + DOOR_H / 2 },
+      // Header
+      { w: openingWidth + frameThickness * 2, h: frameThickness, wp: worldCenter, ly: holeTop + frameThickness / 2 },
     ];
     for (const fp of frameParts) {
       const fg = new THREE.PlaneGeometry(fp.w, fp.h);

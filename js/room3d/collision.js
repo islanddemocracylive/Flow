@@ -3,11 +3,11 @@
  *
  * Uses simple axis-aligned collision against room walls and obstacle blocks.
  * Movement is blocked by walls but allowed through door openings.
- * Movement is blocked by obstacle cells that have height > 0.
+ * Adjacent door cells merge into a single opening.
  * Each axis is resolved independently for natural wall-sliding.
  */
 
-import { ROOM_W, ROOM_D, DOOR_W } from '../constants.js';
+import { ROOM_W, ROOM_D } from '../constants.js';
 
 const PLAYER_RADIUS = 0.4; // collision radius in feet
 
@@ -46,7 +46,6 @@ export function resolveCollision(newX, newZ, oldX, oldZ, sim) {
 
   // Resolve against obstacles
   if (sim && sim.obstacles) {
-    // Check cells the player would overlap
     const minGX = Math.floor(resolvedX - PLAYER_RADIUS);
     const maxGX = Math.floor(resolvedX + PLAYER_RADIUS);
     const minGY = Math.floor(resolvedZ - PLAYER_RADIUS);
@@ -56,10 +55,8 @@ export function resolveCollision(newX, newZ, oldX, oldZ, sim) {
       for (let gx = minGX; gx <= maxGX; gx++) {
         if (gx < 0 || gx >= sim.cols || gy < 0 || gy >= sim.rows) continue;
         const h = sim.getObstacleHeight(gx, gy);
-        if (h <= 0) continue; // no obstacle
+        if (h <= 0) continue;
 
-        // AABB collision: obstacle occupies [gx, gx+1] x [gy, gy+1]
-        // Find closest point on obstacle to player center
         const closestX = Math.max(gx, Math.min(gx + 1, resolvedX));
         const closestZ = Math.max(gy, Math.min(gy + 1, resolvedZ));
         const dx = resolvedX - closestX;
@@ -68,7 +65,6 @@ export function resolveCollision(newX, newZ, oldX, oldZ, sim) {
 
         if (dist < PLAYER_RADIUS) {
           if (dist === 0) {
-            // Player center is inside obstacle – push out toward old position
             const toOldX = oldX - resolvedX;
             const toOldZ = oldZ - resolvedZ;
             const toOldLen = Math.sqrt(toOldX * toOldX + toOldZ * toOldZ);
@@ -77,7 +73,6 @@ export function resolveCollision(newX, newZ, oldX, oldZ, sim) {
               resolvedZ += (toOldZ / toOldLen) * PLAYER_RADIUS;
             }
           } else {
-            // Push player out along the collision normal
             const pushDist = PLAYER_RADIUS - dist;
             resolvedX += (dx / dist) * pushDist;
             resolvedZ += (dz / dist) * pushDist;
@@ -90,19 +85,39 @@ export function resolveCollision(newX, newZ, oldX, oldZ, sim) {
   return { x: resolvedX, z: resolvedZ };
 }
 
+/**
+ * Check if a position is within a door opening on the given wall.
+ * Adjacent door cells are merged into continuous openings.
+ */
 function isInDoorOpening(wallName, pos, doors) {
   const wallDoors = doors.filter(d => d.wall === wallName);
-  for (const door of wallDoors) {
-    let doorCenter;
-    if (wallName === 'far' || wallName === 'back') {
-      doorCenter = door.x + 0.5;
+  if (wallDoors.length === 0) return false;
+
+  // Get positions along the wall and sort
+  const positions = wallDoors
+    .map(d => (wallName === 'far' || wallName === 'back') ? d.x : d.y)
+    .sort((a, b) => a - b);
+
+  // Merge consecutive positions into runs and check if pos is inside any
+  let runStart = positions[0];
+  let runEnd = positions[0];
+
+  for (let i = 1; i <= positions.length; i++) {
+    if (i < positions.length && positions[i] === runEnd + 1) {
+      runEnd = positions[i];
     } else {
-      doorCenter = door.y + 0.5;
-    }
-    const halfW = DOOR_W / 2;
-    if (pos >= doorCenter - halfW + PLAYER_RADIUS && pos <= doorCenter + halfW - PLAYER_RADIUS) {
-      return true;
+      // Check run [runStart, runEnd+1] (each cell is 1ft)
+      const openStart = runStart + PLAYER_RADIUS;
+      const openEnd = runEnd + 1 - PLAYER_RADIUS;
+      if (pos >= openStart && pos <= openEnd) {
+        return true;
+      }
+      if (i < positions.length) {
+        runStart = positions[i];
+        runEnd = positions[i];
+      }
     }
   }
+
   return false;
 }
