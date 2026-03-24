@@ -93,15 +93,25 @@ export class FireSimulation {
   }
 
   /**
-   * Compute spray parameters based on 3D distance from player to ceiling hit.
+   * Compute spray parameters based on cone geometry from nozzle to ceiling.
+   *
+   * The nozzle produces a cone of water. The spray radius on the ceiling is
+   * determined by the cone's half-angle and the distance to the ceiling hit,
+   * not a flat base radius. Spraying straight up gives a tight ~0.7ft circle;
+   * spraying at an angle elongates into an ellipse as the cone intersects
+   * the ceiling obliquely.
+   *
+   * Cone half-angle scales inversely with PSI (higher pressure = tighter
+   * stream). The waterRadius slider acts as a multiplier on the cone angle.
+   *
    * playerPos: {x, y, z} in room coords.
    * hitGridX, hitGridY: grid cell the spray is aimed at.
-   * Returns null if out of range, or { radiusX, radiusZ, angle, strength }.
+   * Returns null if out of range, or { majorR, minorR, sprayAngle, strengthFactor }.
    */
   getSprayParams(hitGridX, hitGridY, playerPos) {
     const HOSE_HEIGHT = 4;              // hose held at chest level (ft)
     const CEILING_H = 9;               // room ceiling height (ft)
-    const verticalDist = CEILING_H - HOSE_HEIGHT;
+    const verticalDist = CEILING_H - HOSE_HEIGHT; // 5ft
 
     // 3D distance from hose to ceiling hit point
     const hitWorldX = hitGridX + 0.5;
@@ -111,27 +121,36 @@ export class FireSimulation {
     const horizDist = Math.sqrt(dx * dx + dz * dz);
     const totalDist = Math.sqrt(horizDist * horizDist + verticalDist * verticalDist);
 
-    // Max reach scales with PSI: ~30 ft at 100 PSI (fog nozzle)
+    // Max reach scales with PSI: ~30 ft at 100 PSI
     const maxReach = this.sprayPSI * 0.3;
     if (totalDist > maxReach) return null;
+
+    // Cone half-angle (radians): ~8° at 100 PSI with waterRadius=2 (narrow fog).
+    // Higher PSI = tighter cone. waterRadius slider scales the angle.
+    // Base: 8° at 100 PSI, radius=2. Inversely proportional to sqrt(PSI).
+    const baseDeg = 8;   // degrees at 100 PSI, waterRadius=2
+    const halfAngleDeg = baseDeg * (this.waterRadius / 2) * Math.sqrt(100 / this.sprayPSI);
+    const halfAngleRad = halfAngleDeg * Math.PI / 180;
+
+    // Spray radius = distance along the beam × tan(half-angle)
+    // Directly overhead (5ft): ~0.7ft. At 15ft away: ~2.1ft.
+    const coneRadius = totalDist * Math.tan(halfAngleRad);
 
     // Incidence angle: 0 = directly overhead, π/2 = horizontal
     const incidenceAngle = Math.atan2(horizDist, verticalDist);
 
-    // Spray radius: base radius shrinks with distance, elongates with angle
-    const distFactor = Math.max(0.2, 1.0 - totalDist / maxReach);
-    const baseR = this.waterRadius * distFactor;
-
-    // Overhead: circle. At angle: ellipse elongated along spray direction.
-    // Minor axis (perpendicular): stays ~baseR. Major axis: stretches with 1/cos(θ).
+    // On the ceiling, the cone intersects as an ellipse when spraying at an angle.
+    // Minor axis (perpendicular to spray direction): cone radius.
+    // Major axis (along spray direction): stretches by 1/cos(incidence).
     const cosAngle = Math.max(0.15, Math.cos(incidenceAngle));
-    const majorR = baseR / cosAngle;   // elongated along spray direction
-    const minorR = baseR;              // perpendicular stays the same
+    const majorR = Math.max(0.5, coneRadius / cosAngle);
+    const minorR = Math.max(0.5, coneRadius);
 
-    // Spray direction angle on the ceiling (atan2 of horiz vector)
+    // Spray direction angle on the ceiling
     const sprayAngle = Math.atan2(dz, dx);
 
-    // Strength falls off with distance
+    // Strength falls off with distance (water disperses over larger area)
+    const distFactor = Math.max(0.2, 1.0 - totalDist / maxReach);
     const strengthFactor = distFactor * distFactor;
 
     return {

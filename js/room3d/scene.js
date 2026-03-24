@@ -14,7 +14,7 @@ if (container && typeof THREE !== 'undefined') {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0a0a14);
 
-  camera = new THREE.PerspectiveCamera(65, 1, 0.1, 100);
+  camera = new THREE.PerspectiveCamera(75, 1, 0.1, 100);
   camera.position.set(ROOM_W / 2, EYE_HEIGHT, ROOM_D + 5);
   camera.lookAt(ROOM_W / 2, EYE_HEIGHT, ROOM_D / 2);
 
