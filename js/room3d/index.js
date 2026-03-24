@@ -113,12 +113,27 @@ const room3d = {
     return orbitMode;
   },
 
-  /** Handle container resize */
+  /** Handle container resize – caps aspect ratio to avoid fish-eye distortion */
   onResize() {
     if (!available) return;
-    const w = container.clientWidth;
-    const h = container.clientHeight;
-    if (w === 0 || h === 0) return;
+    const cw = container.clientWidth;
+    const ch = container.clientHeight;
+    if (cw === 0 || ch === 0) return;
+
+    const MAX_ASPECT = 16 / 9;
+    const containerAspect = cw / ch;
+
+    let w, h;
+    if (containerAspect > MAX_ASPECT) {
+      // Too wide – constrain width, use full height
+      h = ch;
+      w = Math.round(ch * MAX_ASPECT);
+    } else {
+      // Fits within 16:9 – use full container
+      w = cw;
+      h = ch;
+    }
+
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
