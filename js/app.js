@@ -30,14 +30,14 @@ let net = null;
 let lastNetSend = 0;
 // Track active remote water sprays – updated by viewer messages,
 // applied each frame with the controller's own dt.
-let remoteWater = null; // { gridX, gridY, playerPos, lastSeen }
+let remoteWater = null; // { worldX, worldZ, playerPos, lastSeen }
 
 try {
   net = new SimNetwork('controller');
   net.onWater = (msg) => {
     remoteWater = {
-      gridX: msg.gridX,
-      gridY: msg.gridY,
+      worldX: msg.worldX,
+      worldZ: msg.worldZ,
       playerPos: { x: msg.playerX, z: msg.playerZ },
       lastSeen: performance.now(),
     };
@@ -288,7 +288,7 @@ function loop(now) {
   // Apply remote water sprays from viewer clients (server owns the sim clock)
   if (remoteWater && now - remoteWater.lastSeen < 200) {
     const rw = remoteWater;
-    sim.applyWater(rw.gridX, rw.gridY, dt, rw.playerPos);
+    sim.applyWater(rw.worldX, rw.worldZ, dt, rw.playerPos);
   }
 
   render2D(sim, state);

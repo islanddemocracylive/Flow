@@ -66,11 +66,11 @@ export class SimNetwork {
     }
   }
 
-  sendWater(gridX, gridY, playerPos) {
+  sendWater(worldX, worldZ, playerPos) {
     if (this.connected && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({
         type: 'water',
-        gridX, gridY,
+        worldX, worldZ,
         playerX: playerPos.x,
         playerZ: playerPos.z,
       }));

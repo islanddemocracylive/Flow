@@ -133,10 +133,10 @@ function loop() {
       const hit = room3d.raycastCeiling(sprayState.mouseX3d, sprayState.mouseY3d);
       if (hit) {
         const playerPos = room3d.getPlayerPosition();
-        const sprayParams = sim.getSprayParams(hit.gridX, hit.gridY, playerPos);
+        const sprayParams = sim.getSprayParams(hit.worldX, hit.worldZ, playerPos);
         if (sprayParams) {
-          net.sendWater(hit.gridX, hit.gridY, playerPos);
-          room3d.showWaterSpray(hit.gridX, hit.gridY, sprayParams);
+          net.sendWater(hit.worldX, hit.worldZ, playerPos);
+          room3d.showWaterSpray(hit.worldX, hit.worldZ, sprayParams);
         } else {
           room3d.hideWaterSpray();
         }

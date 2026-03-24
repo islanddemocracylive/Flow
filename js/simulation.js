@@ -114,19 +114,17 @@ export class FireSimulation {
    * distance (same water volume spread over larger area).
    *
    * playerPos: {x, y, z} in room coords.
-   * hitGridX, hitGridY: grid cell the spray is aimed at.
+   * worldX, worldZ: continuous ceiling hit point in room coords.
    * Returns null if out of range, or { majorR, minorR, sprayAngle, strengthFactor }.
    */
-  getSprayParams(hitGridX, hitGridY, playerPos) {
+  getSprayParams(worldX, worldZ, playerPos) {
     const HOSE_HEIGHT = 4;              // hose held at chest level (ft)
     const CEILING_H = 9;               // room ceiling height (ft)
     const verticalDist = CEILING_H - HOSE_HEIGHT; // 5ft
 
     // 3D distance from hose to ceiling hit point
-    const hitWorldX = hitGridX + 0.5;
-    const hitWorldZ = hitGridY + 0.5;
-    const dx = hitWorldX - playerPos.x;
-    const dz = hitWorldZ - playerPos.z;
+    const dx = worldX - playerPos.x;
+    const dz = worldZ - playerPos.z;
     const horizDist = Math.sqrt(dx * dx + dz * dz);
     const totalDist = Math.sqrt(horizDist * horizDist + verticalDist * verticalDist);
 
@@ -184,8 +182,8 @@ export class FireSimulation {
     return 15 * Math.sqrt(this.sprayPSI);
   }
 
-  applyWater(cx, cy, dt, playerPos) {
-    const params = playerPos ? this.getSprayParams(cx, cy, playerPos) : null;
+  applyWater(worldX, worldZ, dt, playerPos) {
+    const params = playerPos ? this.getSprayParams(worldX, worldZ, playerPos) : null;
 
     if (playerPos && !params) return; // out of range
 
@@ -196,41 +194,51 @@ export class FireSimulation {
 
     // Derive suppression rate from physics:
     // GPM → gallons/sec, distributed over spray ellipse area.
-    // COOLING_FACTOR converts gallons/sec/sqft to heat reduction rate.
-    // At 100 PSI overhead: suppressionRate ≈ 2.4/s → ~0.4s to extinguish.
-    // With ~100ms network round-trip, observed time ≈ 0.5s.
+    // Peak density at cone center = 3× average (cone falloff profile integrates
+    // to 1/3 of area × peak). COOLING_FACTOR converts peak gal/s/sqft to heat
+    // reduction rate.
+    // At 100 PSI, 7ft horizontal: suppressionRate ≈ 2.1/s → ~0.5s observed.
     // Moisture mechanic handles re-ignition resistance separately.
-    const COOLING_FACTOR = 1.5;
+    const COOLING_FACTOR = 2.5;
     const gps = this.getGPM() / 60;                      // gallons per second
     const sprayArea = Math.PI * majorR * minorR;          // sq ft
-    const suppressionRate = (gps / sprayArea) * COOLING_FACTOR * strengthMul;
+    const peakDensity = 3 * gps / sprayArea;              // gal/s/sqft at center
+    const suppressionRate = peakDensity * COOLING_FACTOR * strengthMul;
 
     const cosA = Math.cos(-angle);
     const sinA = Math.sin(-angle);
     const rMax = Math.ceil(Math.max(majorR, minorR));
 
+    // Grid cell containing the spray center
+    const cx = Math.floor(worldX);
+    const cz = Math.floor(worldZ);
+
     for (let dy = -rMax; dy <= rMax; dy++) {
       for (let dx = -rMax; dx <= rMax; dx++) {
-        const x = cx + dx;
-        const y = cy + dy;
-        if (x < 0 || x >= this.cols || y < 0 || y >= this.rows) continue;
+        const gx = cx + dx;
+        const gy = cz + dy;
+        if (gx < 0 || gx >= this.cols || gy < 0 || gy >= this.rows) continue;
+
+        // Sub-cell precision: distance from cell center to spray center
+        const offX = (gx + 0.5) - worldX;
+        const offZ = (gy + 0.5) - worldZ;
 
         // Rotate offset into ellipse-local coords (aligned with spray direction)
-        const lx = dx * cosA - dy * sinA;
-        const ly = dx * sinA + dy * cosA;
+        const lx = offX * cosA - offZ * sinA;
+        const ly = offX * sinA + offZ * cosA;
 
         // Elliptical distance: (lx/majorR)^2 + (ly/minorR)^2 <= 1
         const ellipseDist = (lx * lx) / (majorR * majorR) + (ly * ly) / (minorR * minorR);
         if (ellipseDist > 1.0) continue;
 
         const falloff = 1.0 - Math.sqrt(ellipseDist);
-        const i = this.idx(x, y);
+        const i = this.idx(gx, gy);
         const cooled = this.heat[i] - suppressionRate * falloff * dt;
         this.heat[i] = cooled > 0 ? cooled : 0; // also handles NaN → 0
 
-        // Accumulate moisture – water density (gal/s/sqft) hitting this cell.
-        // Saturates at 1.0 in ~1s of continuous direct spray overhead.
-        const waterDensity = (gps / sprayArea) * falloff * strengthMul;
+        // Accumulate moisture – peak water density × falloff at this cell.
+        // Saturates at 1.0 in ~0.5s of continuous direct spray overhead.
+        const waterDensity = peakDensity * falloff * strengthMul;
         const m = this.moisture[i] + waterDensity * dt;
         this.moisture[i] = m < 1 ? m : 1;
       }

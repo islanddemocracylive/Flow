@@ -22,7 +22,7 @@ export function raycastCeiling(clientX, clientY) {
 
   const hit = raycaster.ray.intersectPlane(ceilingPlane, rayHitPoint);
   if (hit && hit.x >= 0 && hit.x <= ROOM_W && hit.z >= 0 && hit.z <= ROOM_D) {
-    return { gridX: Math.floor(hit.x), gridY: Math.floor(hit.z) };
+    return { worldX: hit.x, worldZ: hit.z };
   }
   return null;
 }
@@ -50,13 +50,13 @@ if (scene) {
  * Show the spray indicator with elliptical shape.
  * params: { majorR, minorR, sprayAngle, strengthFactor } from sim.getSprayParams()
  */
-export function showWaterSpray(gridX, gridY, params) {
+export function showWaterSpray(worldX, worldZ, params) {
   if (!sprayIndicator) return;
   if (!params) {
     sprayIndicator.visible = false;
     return;
   }
-  sprayIndicator.position.set(gridX + 0.5, ROOM_H - 0.02, gridY + 0.5);
+  sprayIndicator.position.set(worldX, ROOM_H - 0.02, worldZ);
   sprayIndicator.scale.set(params.majorR, params.minorR, 1);
   // Lay flat on ceiling (rotate -90° around X), then rotate around world Y
   // for spray direction. Negate angle because Three.js Y rotation goes
