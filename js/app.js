@@ -93,6 +93,14 @@ viewTabs.forEach(tab => {
   });
 });
 
+// ── Open Viewer link: save scenario to localStorage for viewer ──
+const openViewerLink = document.getElementById('open-viewer-link');
+if (openViewerLink) {
+  openViewerLink.addEventListener('click', () => {
+    localStorage.setItem('flow_viewer_scenario', JSON.stringify(sim.toScenarioData()));
+  });
+}
+
 // ── Canvas sizing ─────────────────────────────────────────
 window.addEventListener('resize', () => {
   if (state.activeView === '2d') {

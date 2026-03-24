@@ -13,6 +13,14 @@ import { enableFPCamera } from './room3d/fpCamera.js';
 const sim = new FireSimulation(GRID_COLS, GRID_ROWS);
 window.fireSim = sim;
 
+// Load scenario from localStorage (saved by admin when "Open Viewer" is clicked)
+try {
+  const saved = localStorage.getItem('flow_viewer_scenario');
+  if (saved) {
+    sim.loadScenarioData(JSON.parse(saved));
+  }
+} catch (e) { /* ignore parse errors */ }
+
 const statusEl = document.getElementById('status');
 
 // Connect to server as viewer

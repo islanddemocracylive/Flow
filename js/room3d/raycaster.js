@@ -59,9 +59,11 @@ export function showWaterSpray(gridX, gridY, params) {
   sprayIndicator.position.set(gridX + 0.5, ROOM_H - 0.02, gridY + 0.5);
   sprayIndicator.scale.set(params.majorR, params.minorR, 1);
   // Lay flat on ceiling (rotate -90° around X), then rotate around world Y
-  // for spray direction using quaternion composition to avoid gimbal issues.
+  // for spray direction. Negate angle because Three.js Y rotation goes
+  // from +X toward -Z (right-hand rule), but sprayAngle=atan2(dz,dx)
+  // points from +X toward +Z.
   const qFlat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-  const qDir = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), params.sprayAngle);
+  const qDir = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -params.sprayAngle);
   sprayIndicator.quaternion.copy(qDir.multiply(qFlat));
   // Fade opacity with distance
   sprayIndicator.material.opacity = 0.15 + 0.35 * params.strengthFactor;

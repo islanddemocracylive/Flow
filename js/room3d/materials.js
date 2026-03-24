@@ -30,7 +30,7 @@ export const ventOpeningMat = typeof THREE !== 'undefined' ? new THREE.MeshBasic
 }) : null;
 
 export const doorFrameMat = typeof THREE !== 'undefined'
-  ? new THREE.MeshLambertMaterial({ color: 0x8b7355 })
+  ? new THREE.MeshLambertMaterial({ color: 0x8b7355, side: THREE.DoubleSide })
   : null;
 
 export const doorOpeningMat = typeof THREE !== 'undefined' ? new THREE.MeshBasicMaterial({
