@@ -424,7 +424,7 @@ export class FireSimulation {
         let h = heat[i];
 
         if (h > 0 && this.isCeilingVent(x, y)) {
-          h = Math.max(0, h - 0.8 * dt);
+          h = Math.max(0, h - 0.8 * ventStrength * dt);
         }
 
         if (h > 0) {
