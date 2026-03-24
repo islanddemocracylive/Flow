@@ -28,11 +28,7 @@ const statusEl = document.getElementById('status');
 const net = new SimNetwork('viewer');
 
 net.onHeatData = (heatArray) => {
-  // Use the lower of local and server heat per cell so local water
-  // suppression isn't overwritten by stale server data each frame.
-  for (let i = 0; i < sim.heat.length; i++) {
-    sim.heat[i] = Math.min(sim.heat[i], heatArray[i]);
-  }
+  sim.heat.set(heatArray);
 };
 
 net.onParams = (params) => {
@@ -124,20 +120,18 @@ if (room3dContainer) {
   }, { passive: true });
 }
 
-const FIXED_DT = 1 / 30;
-
 // Render loop
 function loop() {
   if (room3d.available) {
-    // Apply water spray (locally for visuals + send to controller for simulation)
+    // Send water spray to controller (server is the single source of truth
+    // for heat — we only send input, never manipulate heat locally)
     if (sprayState.mouse3dDown && sprayState.dragDistance3d > DRAG_THRESHOLD) {
       const hit = room3d.raycastCeiling(sprayState.mouseX3d, sprayState.mouseY3d);
       if (hit) {
         const playerPos = room3d.getPlayerPosition();
         const sprayParams = sim.getSprayParams(hit.gridX, hit.gridY, playerPos);
         if (sprayParams) {
-          sim.applyWater(hit.gridX, hit.gridY, FIXED_DT, playerPos);
-          net.sendWater(hit.gridX, hit.gridY, FIXED_DT, playerPos);
+          net.sendWater(hit.gridX, hit.gridY, playerPos);
           room3d.showWaterSpray(hit.gridX, hit.gridY, sprayParams);
         } else {
           room3d.hideWaterSpray();
