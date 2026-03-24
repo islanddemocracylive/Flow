@@ -197,9 +197,10 @@ export class FireSimulation {
     // Derive suppression rate from physics:
     // GPM → gallons/sec, distributed over spray ellipse area.
     // COOLING_FACTOR converts gallons/sec/sqft to heat reduction rate.
-    // Tuned so 150 GPM overhead extinguishes a fully-involved cell in ~0.1s,
-    // fast enough to sweep across multiple cells before re-ignition takes hold.
-    const COOLING_FACTOR = 6.0;
+    // At 100 PSI overhead: suppressionRate ≈ 2.4/s → ~0.4s to extinguish.
+    // With ~100ms network round-trip, observed time ≈ 0.5s.
+    // Moisture mechanic handles re-ignition resistance separately.
+    const COOLING_FACTOR = 1.5;
     const gps = this.getGPM() / 60;                      // gallons per second
     const sprayArea = Math.PI * majorR * minorR;          // sq ft
     const suppressionRate = (gps / sprayArea) * COOLING_FACTOR * strengthMul;
