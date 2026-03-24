@@ -172,7 +172,6 @@ export function setupAdminPanel(sim, state, net) {
 
   bindSlider('spread-speed', 'spread-speed-val', 'spreadSpeed');
   bindSlider('ignition-threshold', 'ignition-threshold-val', 'ignitionThreshold');
-  bindSlider('max-intensity', 'max-intensity-val', 'maxIntensity', v => v.toFixed(2));
   bindSlider('water-radius', 'water-radius-val', 'waterRadius');
   bindSlider('spray-psi', 'spray-psi-val', 'sprayPSI');
   bindSlider('vent-strength', 'vent-strength-val', 'ventStrength', v => v.toFixed(1));
@@ -190,7 +189,6 @@ export function setupAdminPanel(sim, state, net) {
     const pairs = [
       ['spread-speed', 'spread-speed-val', 'spreadSpeed', null],
       ['ignition-threshold', 'ignition-threshold-val', 'ignitionThreshold', null],
-      ['max-intensity', 'max-intensity-val', 'maxIntensity', v => v.toFixed(2)],
       ['water-radius', 'water-radius-val', 'waterRadius', null],
       ['spray-psi', 'spray-psi-val', 'sprayPSI', null],
       ['vent-strength', 'vent-strength-val', 'ventStrength', v => v.toFixed(1)],

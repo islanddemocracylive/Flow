@@ -34,7 +34,6 @@ net.onHeatData = (heatArray) => {
 net.onParams = (params) => {
   if (params.spreadSpeed !== undefined) sim.spreadSpeed = params.spreadSpeed;
   if (params.ignitionThreshold !== undefined) sim.ignitionThreshold = params.ignitionThreshold;
-  if (params.maxIntensity !== undefined) sim.maxIntensity = params.maxIntensity;
   if (params.waterRadius !== undefined) sim.waterRadius = params.waterRadius;
   if (params.sprayPSI !== undefined) sim.sprayPSI = params.sprayPSI;
 };

@@ -27,7 +27,6 @@ export class FireSimulation {
     // Tunable parameters (set from admin panel)
     this.spreadSpeed = 1.5;
     this.ignitionThreshold = 0.15;
-    this.maxIntensity = 1.0;
     this.waterRadius = 2;
     this.sprayPSI = 100;          // nozzle pressure – controls reach & flow rate
 
@@ -76,7 +75,7 @@ export class FireSimulation {
         if (dist <= radius) {
           const strength = 1.0 - (dist / radius) * 0.5;
           const i = this.idx(x, y);
-          this.heat[i] = Math.min(this.maxIntensity, Math.max(this.heat[i], strength));
+          this.heat[i] = Math.min(1.0, Math.max(this.heat[i], strength));
         }
       }
     }
@@ -416,7 +415,7 @@ export class FireSimulation {
   }
 
   step(dt) {
-    const { cols, rows, heat, nextHeat, spreadSpeed, ignitionThreshold, maxIntensity, airflow, ventStrength } = this;
+    const { cols, rows, heat, nextHeat, spreadSpeed, ignitionThreshold, airflow, ventStrength } = this;
     const hasAirflow = this.vents.length > 0;
 
     for (let y = 0; y < rows; y++) {
@@ -429,13 +428,13 @@ export class FireSimulation {
         }
 
         if (h > 0) {
-          h = Math.min(maxIntensity, h + 0.3 * dt * (maxIntensity - h));
+          h = Math.min(1.0, h + 0.3 * dt * (1.0 - h));
 
           if (hasAirflow) {
             const ai = (y * cols + x) * 2;
             const mag = Math.sqrt(airflow[ai] * airflow[ai] + airflow[ai + 1] * airflow[ai + 1]);
             if (mag > 0.05) {
-              h = Math.min(maxIntensity, h + mag * ventStrength * 0.15 * dt);
+              h = Math.min(1.0, h + mag * ventStrength * 0.15 * dt);
             }
           }
 
@@ -505,7 +504,7 @@ export class FireSimulation {
           }
         }
 
-        nextHeat[i] = Math.max(0, Math.min(maxIntensity, h));
+        nextHeat[i] = Math.max(0, Math.min(1.0, h));
       }
     }
 
@@ -544,7 +543,6 @@ export class FireSimulation {
       params: {
         spreadSpeed: this.spreadSpeed,
         ignitionThreshold: this.ignitionThreshold,
-        maxIntensity: this.maxIntensity,
         waterRadius: this.waterRadius,
         sprayPSI: this.sprayPSI,
         ventStrength: this.ventStrength,
