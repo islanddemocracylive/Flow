@@ -53,9 +53,12 @@ header h1 {
 
 #view-tabs {
   display: flex;
+  align-items: center;
   background: #16213e;
   border-bottom: 1px solid #0f3460;
   flex-shrink: 0;
+  gap: 4px;
+  padding-right: 4px;
 }
 
 .view-tab {
@@ -79,8 +82,54 @@ header h1 {
   border-bottom-color: #ff6b35;
 }
 
-.view-tab.viewer-link {
+/* ── Tab bar action buttons (Play / Reset) ────────────── */
+.tab-bar-btn {
+  padding: 5px 16px;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin: 4px 0;
+  align-self: center;
+}
+
+.tab-bar-btn.reset-btn {
   margin-left: auto;
+  background: transparent;
+  color: #888;
+  border-color: #333;
+  font-size: 0.72rem;
+  padding: 4px 10px;
+}
+
+.tab-bar-btn.reset-btn:hover {
+  color: #e74c3c;
+  border-color: #e74c3c;
+}
+
+.tab-bar-btn.play-btn {
+  background: #1a6a2e;
+  border-color: #2a8a3e;
+  color: #fff;
+  font-weight: bold;
+  margin-right: 4px;
+}
+
+.tab-bar-btn.play-btn:hover {
+  background: #2a8a3e;
+}
+
+.tab-bar-btn.play-btn.playing {
+  background: #8a2a2a;
+  border-color: #c44;
+}
+
+.tab-bar-btn.play-btn.playing:hover {
+  background: #a33;
+}
+
+.view-tab.viewer-link {
   text-decoration: none;
   color: #6cb4ee;
   font-size: 0.8rem;
@@ -195,21 +244,6 @@ header h1 {
   border-color: #ff6b35;
 }
 
-.play-btn {
-  background: #1a6a2e !important;
-  border-color: #2a8a3e !important;
-  color: #fff !important;
-  font-size: 0.9rem !important;
-}
-
-.play-btn:hover {
-  background: #2a8a3e !important;
-}
-
-.play-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
 
 /* ── Admin Panel ───────────────────────────────────────── */
 #admin-panel {
@@ -388,18 +422,6 @@ select {
   color: #fff;
 }
 
-/* Stats */
-.stats .stat-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.8rem;
-  margin-bottom: 4px;
-}
-
-.stats .stat-row span:last-child {
-  color: #ff6b35;
-  font-weight: bold;
-}
 
 /* ── Share Simulator modal ──────────────────────────────── */
 .share-modal-overlay {
@@ -567,23 +589,6 @@ select {
     display: flex;
     align-items: center;
     justify-content: center;
-  }
-
-  /* Inline stats bar shown above canvas on mobile */
-  .mobile-stats {
-    display: flex;
-    justify-content: space-around;
-    background: #16213e;
-    padding: 4px 8px;
-    font-size: 0.7rem;
-    border-bottom: 1px solid #0f3460;
-    flex-shrink: 0;
-  }
-
-  .mobile-stats span {
-    color: #ff6b35;
-    font-weight: bold;
-    margin-left: 4px;
   }
 
   /* Two-column layout for controls on mobile */

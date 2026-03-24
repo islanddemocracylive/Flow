@@ -113,46 +113,50 @@ export function setupAdminPanel(sim, state, net) {
     }
   });
 
-  // ── Play / Stop ─────────────────────────────────────────
+  // ── Play / Stop (single toggle button in tab bar) ──────
 
   const btnPlay = document.getElementById('btn-play');
-  const btnStop = document.getElementById('btn-stop');
   const btnReset = document.getElementById('btn-reset');
 
-  function updatePlayStopButtons() {
-    if (btnPlay) btnPlay.disabled = state.playing;
-    if (btnStop) btnStop.disabled = !state.playing;
+  function updatePlayButton() {
+    if (!btnPlay) return;
+    if (state.playing) {
+      btnPlay.textContent = 'Stop Scenario';
+      btnPlay.classList.add('playing');
+    } else {
+      btnPlay.textContent = 'Play Scenario';
+      btnPlay.classList.remove('playing');
+    }
   }
 
   if (btnPlay) btnPlay.addEventListener('click', () => {
-    // Validate: need at least one fire start location
-    if (sim.startLocations.size === 0) {
-      alert('Place at least one fire start location before playing.');
-      return;
+    if (state.playing) {
+      // Stop
+      state.playing = false;
+      state.paused = true;
+    } else {
+      // Play: validate, reset, ignite
+      if (sim.startLocations.size === 0) {
+        alert('Place at least one fire start location before playing.');
+        return;
+      }
+      sim.reset();
+      sim.igniteStartLocations();
+      state.playing = true;
+      state.paused = false;
     }
-    // Reset fire, then ignite start locations
-    sim.reset();
-    sim.igniteStartLocations();
-    state.playing = true;
-    state.paused = false;
-    updatePlayStopButtons();
-  });
-
-  if (btnStop) btnStop.addEventListener('click', () => {
-    state.playing = false;
-    state.paused = true;
-    updatePlayStopButtons();
+    updatePlayButton();
   });
 
   if (btnReset) btnReset.addEventListener('click', () => {
     sim.reset();
     state.playing = false;
     state.paused = false;
-    updatePlayStopButtons();
+    updatePlayButton();
     if (net && net.connected) net.sendReset();
   });
 
-  updatePlayStopButtons();
+  updatePlayButton();
 
   // ── Sliders ─────────────────────────────────────────────
 
@@ -214,11 +218,9 @@ export function setupAdminPanel(sim, state, net) {
 
   const togglePanelBtn = document.getElementById('toggle-panel-btn');
   const adminPanel = document.getElementById('admin-panel');
-  const mobileStats = document.getElementById('mobile-stats');
 
   function checkMobile() {
     const isMobile = window.innerWidth <= 700;
-    if (mobileStats) mobileStats.style.display = isMobile ? 'flex' : 'none';
     if (!isMobile && adminPanel) adminPanel.classList.remove('open');
   }
   checkMobile();
@@ -232,22 +234,6 @@ export function setupAdminPanel(sim, state, net) {
   }
 }
 
-export function updateStats(sim) {
-  const stats = sim.getStats();
-
-  const statBurning = document.getElementById('stat-burning');
-  const statCoverage = document.getElementById('stat-coverage');
-  const statIntensity = document.getElementById('stat-intensity');
-
-  if (statBurning) statBurning.textContent = stats.burning;
-  if (statCoverage) statCoverage.textContent = (stats.coverage * 100).toFixed(1) + '%';
-  if (statIntensity) statIntensity.textContent = stats.avgIntensity.toFixed(2);
-
-  // Mobile stats bar
-  const mStatBurning = document.getElementById('m-stat-burning');
-  if (mStatBurning) {
-    mStatBurning.textContent = stats.burning;
-    document.getElementById('m-stat-coverage').textContent = (stats.coverage * 100).toFixed(1) + '%';
-    document.getElementById('m-stat-intensity').textContent = stats.avgIntensity.toFixed(2);
-  }
+export function updateStats(_sim) {
+  // Stats display removed from UI — kept as no-op for callers
 }

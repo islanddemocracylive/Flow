@@ -13,16 +13,14 @@
       <p class="subtitle">Design Room Scenarios in 2D or 3D. Open the Simulator to run the Firefighter experience.</p>
     </header>
 
-    <div id="mobile-stats" class="mobile-stats" style="display:none;">
-      Fire: <span id="m-stat-burning">0</span> | Coverage: <span id="m-stat-coverage">0%</span> | Intensity: <span id="m-stat-intensity">0.00</span>
-    </div>
-
     <div id="main-container">
       <div id="view-area">
         <div id="view-tabs">
           <button class="view-tab active" data-view="2d">2D</button>
           <button class="view-tab" data-view="3d">3D</button>
           <button id="btn-share-viewer" class="view-tab share-btn" title="Copy simulator link / QR code">Share</button>
+          <button id="btn-reset" class="tab-bar-btn reset-btn" title="Reset fire">Reset</button>
+          <button id="btn-play" class="tab-bar-btn play-btn">Play Scenario</button>
           <a id="open-viewer-link" class="view-tab viewer-link" href="viewer.html" target="_blank">Open Simulator &#8599;</a>
         </div>
         <div id="view-2d" class="view-panel active">
@@ -114,22 +112,6 @@
           </label>
         </div>
 
-        <!-- Play / Actions -->
-        <div class="control-group">
-          <h3>Actions</h3>
-          <button id="btn-play" class="action-btn play-btn" style="width:100%;margin-bottom:6px;font-weight:bold">Play Scenario</button>
-          <div class="button-row">
-            <button id="btn-stop" class="action-btn" disabled>Stop</button>
-            <button id="btn-reset" class="action-btn danger">Reset Fire</button>
-          </div>
-        </div>
-
-        <div class="control-group stats">
-          <h3>Statistics</h3>
-          <div class="stat-row"><span>Cells on fire:</span><span id="stat-burning">0</span></div>
-          <div class="stat-row"><span>Fire coverage:</span><span id="stat-coverage">0%</span></div>
-          <div class="stat-row"><span>Avg intensity:</span><span id="stat-intensity">0.00</span></div>
-        </div>
       </aside>
     </div>
   </div>
