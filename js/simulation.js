@@ -581,12 +581,6 @@ export class FireSimulation {
     }
     this.totalHRR = effectiveHRR;
 
-    // Target heat per burning cell (governs self-intensification ceiling)
-    // As t² HRR grows, cells are allowed to burn hotter.
-    const targetCellHeat = burningCells > 0
-      ? Math.min(1.0, (effectiveHRR / burningCells) / CELL_HRR_MAX)
-      : 0;
-
     // ── 4. O₂ update ────────────────────────────────────────
     // Spec §4.2: sealed 500 kW fire depletes 20.9%→15% in 5-7 minutes.
     // The well-mixed calculation gives ~81s — too fast by ~4×.
@@ -662,19 +656,15 @@ export class FireSimulation {
           h = Math.max(0, h - 0.8 * dt);
         }
 
-        // ── Burning cell: intensify toward t²-governed target ──
+        // ── Burning cell: intensify freely toward 1.0 ──
+        // The t² cap governs effectiveHRR for physics (Alpert, gas layer, O₂)
+        // but individual cells burn hotter naturally over time.
         if (h > 0) {
           if (this.ventLimited) {
             h = Math.max(0, h - 0.02 * dt);
           } else {
-            // Cell approaches targetCellHeat at a rate governed by the t² curve.
-            // This replaces the old arbitrary 0.3 growth rate — cells can only
-            // burn as hot as the t² curve allows at this moment in time.
-            const target = Math.max(h, targetCellHeat);
-            const diff = target - h;
-            if (diff > 0) {
-              h += diff * 0.5 * dt * (1.0 - m * GROWTH_DAMPEN);
-            }
+            // Self-intensification: cell heats toward 1.0 at diminishing rate
+            h = Math.min(1.0, h + 0.15 * dt * (1.0 - h) * (1.0 - m * GROWTH_DAMPEN));
           }
           if (h < 0.02) h = Math.max(0, h - 0.05 * dt);
 
