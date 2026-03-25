@@ -72,7 +72,7 @@ function onKeyUp(e) {
 }
 
 function onMouseDown(e) {
-  if (e.button === 0) {
+  if (e.button === 2) {
     lookDragging = true;
     lookLastX = e.clientX;
     lookLastY = e.clientY;
@@ -91,7 +91,7 @@ function onMouseMove(e) {
 }
 
 function onMouseUp(e) {
-  if (e.button === 0) lookDragging = false;
+  if (e.button === 2) lookDragging = false;
 }
 
 function onContextMenu(e) {
@@ -99,43 +99,29 @@ function onContextMenu(e) {
 }
 
 function onTouchStart(e) {
-  if (e.touches.length === 1) {
+  if (e.touches.length === 2) {
     touchLookActive = true;
-    touchLookId = e.touches[0].identifier;
-    touchLookLastX = e.touches[0].clientX;
-    touchLookLastY = e.touches[0].clientY;
+    touchLookLastX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    touchLookLastY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
   }
 }
 
 function onTouchMove(e) {
-  if (!touchLookActive) return;
-  for (let i = 0; i < e.touches.length; i++) {
-    if (e.touches[i].identifier === touchLookId) {
-      const t = e.touches[i];
-      const dx = t.clientX - touchLookLastX;
-      const dy = t.clientY - touchLookLastY;
-      touchLookLastX = t.clientX;
-      touchLookLastY = t.clientY;
-      fpYaw += dx * LOOK_SENSITIVITY;
-      fpPitch += dy * LOOK_SENSITIVITY;
-      fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
-      break;
-    }
-  }
-  if (e.touches.length >= 2) {
-    touchLookActive = false;
-    touchLookId = -1;
-  }
+  if (!touchLookActive || e.touches.length < 2) return;
+  const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+  const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+  const dx = midX - touchLookLastX;
+  const dy = midY - touchLookLastY;
+  touchLookLastX = midX;
+  touchLookLastY = midY;
+  fpYaw += dx * LOOK_SENSITIVITY;
+  fpPitch += dy * LOOK_SENSITIVITY;
+  fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
 }
 
 function onTouchEnd(e) {
-  let found = false;
-  for (let i = 0; i < e.touches.length; i++) {
-    if (e.touches[i].identifier === touchLookId) { found = true; break; }
-  }
-  if (!found) {
+  if (e.touches.length < 2) {
     touchLookActive = false;
-    touchLookId = -1;
   }
 }
 

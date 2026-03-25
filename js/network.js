@@ -34,6 +34,7 @@ export class SimNetwork {
           if (msg.type === 'params' && this.onParams) this.onParams(msg);
           if (msg.type === 'reset' && this.onReset) this.onReset();
           if (msg.type === 'water' && this.onWater) this.onWater(msg);
+          if (msg.type === 'scenario' && this.onScenario) this.onScenario(msg.data);
         } catch (e) { /* ignore bad JSON */ }
       }
     };
@@ -74,6 +75,12 @@ export class SimNetwork {
         playerX: playerPos.x,
         playerZ: playerPos.z,
       }));
+    }
+  }
+
+  sendScenario(scenarioData) {
+    if (this.connected && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'scenario', data: scenarioData }));
     }
   }
 }

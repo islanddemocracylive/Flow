@@ -28,6 +28,8 @@ window.fireSim = sim;
 // ── Network (remote viewing) ────────────────────────────
 let net = null;
 let lastNetSend = 0;
+let lastScenarioSend = 0;
+let lastScenarioKey = '';
 // Track active remote water sprays – updated by viewer messages,
 // applied each frame with the controller's own dt.
 let remoteWater = null; // { worldX, worldZ, playerPos, lastSeen }
@@ -307,6 +309,16 @@ function loop(now) {
   if (net && net.connected && now - lastNetSend > 50) {
     net.sendHeat(sim.heat);
     lastNetSend = now;
+  }
+
+  // Send scenario data when it changes or periodically for late-joining viewers
+  if (net && net.connected && now - lastScenarioSend > 2000) {
+    const scenarioKey = JSON.stringify(sim.vents) + '|' + Array.from(sim.obstacles).join(',');
+    if (scenarioKey !== lastScenarioKey || now - lastScenarioSend > 10000) {
+      net.sendScenario(sim.toScenarioData());
+      lastScenarioKey = scenarioKey;
+      lastScenarioSend = now;
+    }
   }
 
   requestAnimationFrame(loop);

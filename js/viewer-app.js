@@ -46,6 +46,10 @@ net.onReset = () => {
   sim.reset();
 };
 
+net.onScenario = (data) => {
+  sim.loadScenarioData(data);
+};
+
 // Enable first-person camera for the viewer
 enableFPCamera();
 
@@ -57,14 +61,14 @@ const sprayState = {
   dragDistance3d: 0,
 };
 
-// Setup water spray input (right-click + drag)
+// Setup water spray input (left-click + drag on desktop, 1-finger on mobile)
 const room3dContainer = document.getElementById('room3d-container');
 if (room3dContainer) {
   room3dContainer.addEventListener('contextmenu', e => e.preventDefault());
 
   let mouseDownX = 0, mouseDownY = 0;
   room3dContainer.addEventListener('mousedown', (e) => {
-    if (e.button !== 2) return;
+    if (e.button !== 0) return;
     sprayState.mouse3dDown = true;
     sprayState.mouseX3d = e.clientX;
     sprayState.mouseY3d = e.clientY;
@@ -83,7 +87,7 @@ if (room3dContainer) {
   });
 
   room3dContainer.addEventListener('mouseup', (e) => {
-    if (e.button !== 2) return;
+    if (e.button !== 0) return;
     sprayState.mouse3dDown = false;
     sprayState.dragDistance3d = 0;
     room3d.hideWaterSpray();
@@ -97,28 +101,39 @@ if (room3dContainer) {
     clearSprayScreenPosition();
   });
 
-  // 2-finger water spray (touch)
+  // 1-finger water spray (touch) — 2nd finger cancels spray (used for look)
   room3dContainer.addEventListener('touchstart', (e) => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
+    if (e.touches.length === 1) {
       sprayState.mouse3dDown = true;
-      sprayState.mouseX3d = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      sprayState.mouseY3d = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      sprayState.mouseX3d = e.touches[0].clientX;
+      sprayState.mouseY3d = e.touches[0].clientY;
       sprayState.dragDistance3d = DRAG_THRESHOLD + 1;
     }
-  }, { passive: false });
+    if (e.touches.length >= 2) {
+      // Second finger added — stop spraying, let look-around take over
+      sprayState.mouse3dDown = false;
+      sprayState.dragDistance3d = 0;
+      room3d.hideWaterSpray();
+      clearSprayScreenPosition();
+    }
+  }, { passive: true });
 
   room3dContainer.addEventListener('touchmove', (e) => {
-    if (sprayState.mouse3dDown && e.touches.length >= 2) {
-      e.preventDefault();
-      sprayState.mouseX3d = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      sprayState.mouseY3d = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    if (sprayState.mouse3dDown && e.touches.length === 1) {
+      sprayState.mouseX3d = e.touches[0].clientX;
+      sprayState.mouseY3d = e.touches[0].clientY;
       sprayState.dragDistance3d = DRAG_THRESHOLD + 1;
     }
-  }, { passive: false });
+    if (sprayState.mouse3dDown && e.touches.length >= 2) {
+      sprayState.mouse3dDown = false;
+      sprayState.dragDistance3d = 0;
+      room3d.hideWaterSpray();
+      clearSprayScreenPosition();
+    }
+  }, { passive: true });
 
   room3dContainer.addEventListener('touchend', (e) => {
-    if (sprayState.mouse3dDown && e.touches.length < 2) {
+    if (sprayState.mouse3dDown && e.touches.length === 0) {
       sprayState.mouse3dDown = false;
       sprayState.dragDistance3d = 0;
       room3d.hideWaterSpray();
