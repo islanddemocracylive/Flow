@@ -581,12 +581,6 @@ export class FireSimulation {
     }
     this.totalHRR = effectiveHRR;
 
-    // HRR scale factor: ratio of physics-limited HRR to raw burning output.
-    // Applied to neighbor radiant exposure so spread rate follows the t² curve.
-    // Cells burn visually at full intensity, but their effective radiant output
-    // is scaled to match what the t² curve permits.
-    const hrrScale = totalHRR > 0 ? effectiveHRR / totalHRR : 1;
-
     // ── 4. O₂ update ────────────────────────────────────────
     // Spec §4.2: sealed 500 kW fire depletes 20.9%→15% in 5-7 minutes.
     // The well-mixed calculation gives ~81s — too fast by ~4×.
@@ -706,9 +700,11 @@ export class FireSimulation {
         if (h <= 0 && !this.ventLimited) {
           let exposureRate = 0; // kW arriving at this cell
 
-          // (a) Radiant heat from adjacent burning cells
-          // Scaled by hrrScale so spread rate follows the t² curve — cells
-          // burn visually hot but their effective radiant output is t²-limited.
+          // (a) Radiant heat from adjacent burning cells (local physics — NOT
+          // scaled by hrrScale). A burning surface heats its neighbor based on
+          // surface temperature, independent of the room-level t² growth curve.
+          // The t² cap governs long-range ceiling jet preheating (Alpert), not
+          // cell-to-cell radiation.
           for (let ny = y - 1; ny <= y + 1; ny++) {
             for (let nx = x - 1; nx <= x + 1; nx++) {
               if (nx === x && ny === y) continue;
@@ -716,7 +712,7 @@ export class FireSimulation {
               const nh = heat[ny * cols + nx];
               if (nh > 0) {
                 const dist = (nx !== x && ny !== y) ? 1.414 : 1.0;
-                exposureRate += nh * 3.0 * hrrScale / dist;
+                exposureRate += nh * 1.5 / dist;
               }
             }
           }
