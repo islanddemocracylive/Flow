@@ -28,10 +28,15 @@ const statusEl = document.getElementById('status');
 const net = new SimNetwork('viewer');
 
 net.onHeatData = (heatArray) => {
-  // Clamp incoming values to [0,1] to guard against corrupted data
-  for (let i = 0; i < heatArray.length; i++) {
+  // The last float is gasLayerTemp, the rest are heat values
+  const heatLen = sim.cols * sim.rows;
+  for (let i = 0; i < heatLen; i++) {
     const v = heatArray[i];
     sim.heat[i] = v > 0 ? (v < 1 ? v : 1) : 0; // also handles NaN → 0
+  }
+  // Extract gas layer temperature (appended after heat data)
+  if (heatArray.length > heatLen) {
+    sim.gasLayerTemp = heatArray[heatLen];
   }
 };
 

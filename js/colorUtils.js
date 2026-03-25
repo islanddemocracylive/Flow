@@ -39,6 +39,45 @@ export function heatToRGB(heat) {
 }
 
 /**
+ * Convert gas layer temperature (°C) to an RGBA color for the smoke overlay.
+ * Returns { r, g, b, a } with r,g,b in [0,255] and a in [0,1].
+ */
+export function gasLayerColor(temp) {
+  if (temp < 100) return { r: 128, g: 128, b: 128, a: 0 };
+
+  let r, g, b, a;
+  if (temp < 300) {
+    // Light gray smoke
+    const t = (temp - 100) / 200;
+    r = 128; g = 128; b = 128;
+    a = t * 0.3;
+  } else if (temp < 500) {
+    // Brownish gray — thickening smoke
+    const t = (temp - 300) / 200;
+    r = Math.round(128 + t * 12);
+    g = Math.round(128 - t * 8);
+    b = Math.round(128 - t * 38);
+    a = 0.3 + t * 0.2;
+  } else if (temp < 600) {
+    // Orange tint — danger zone
+    const t = (temp - 500) / 100;
+    r = Math.round(140 + t * 40);
+    g = Math.round(120 - t * 20);
+    b = Math.round(90 - t * 50);
+    a = 0.5 + t * 0.1;
+  } else {
+    // Bright orange-red — flashover
+    const t = Math.min(1, (temp - 600) / 200);
+    r = Math.round(180 + t * 40);
+    g = Math.round(100 - t * 20);
+    b = Math.round(40 - t * 20);
+    a = 0.6 + t * 0.1;
+  }
+
+  return { r, g, b, a };
+}
+
+/**
  * Convert heat value [0,1] to a THREE.Color for 3D ceiling panels.
  * Returns a THREE.Color instance.
  */

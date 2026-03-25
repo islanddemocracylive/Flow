@@ -10,7 +10,7 @@
  *   - Design mode indicator
  */
 
-import { heatToRGB } from './colorUtils.js';
+import { heatToRGB, gasLayerColor } from './colorUtils.js';
 
 const canvas = document.getElementById('simulation-canvas');
 const ctx = canvas ? canvas.getContext('2d') : null;
@@ -131,6 +131,38 @@ export function render2D(sim, state) {
         ctx.strokeRect(px0 + 2, py0 + 2, ps - 4, ps - 4);
       }
     }
+  }
+
+  // Gas layer overlay (smoke / flashover visual)
+  if (sim.gasLayerTemp > 100) {
+    const gl = gasLayerColor(sim.gasLayerTemp);
+    if (gl.a > 0) {
+      ctx.fillStyle = `rgba(${gl.r},${gl.g},${gl.b},${gl.a})`;
+      ctx.fillRect(offsetX, offsetY, gridW, gridH);
+    }
+  }
+
+  // Gas layer HUD (top-right of grid)
+  if (state.playing) {
+    const hudX = offsetX + gridW - 8;
+    const hudY = offsetY + 16;
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+
+    // Gas layer temp
+    const temp = Math.round(sim.gasLayerTemp);
+    const gl = gasLayerColor(sim.gasLayerTemp);
+    const tempColor = temp > 500 ? `rgb(${gl.r},${gl.g},${gl.b})`
+      : temp > 300 ? 'rgba(255,200,100,0.9)'
+      : 'rgba(200,200,200,0.7)';
+    ctx.fillStyle = tempColor;
+    ctx.fillText(`Gas: ${temp}°C`, hudX, hudY);
+
+    // HRR
+    const hrr = sim.totalHRR / 1000;
+    ctx.fillStyle = 'rgba(255,180,80,0.7)';
+    ctx.fillText(`HRR: ${hrr.toFixed(1)} MW`, hudX, hudY + 16);
   }
 
   // Airflow arrows

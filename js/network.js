@@ -49,9 +49,13 @@ export class SimNetwork {
     };
   }
 
-  sendHeat(float32Array) {
+  sendHeat(float32Array, gasLayerTemp) {
     if (this.connected && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(float32Array.buffer);
+      // Append gasLayerTemp as an extra float after the heat array
+      const combined = new Float32Array(float32Array.length + 1);
+      combined.set(float32Array);
+      combined[float32Array.length] = gasLayerTemp || 0;
+      this.ws.send(combined.buffer);
     }
   }
 

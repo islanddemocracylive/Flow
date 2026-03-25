@@ -17,3 +17,11 @@ export const DRAG_THRESHOLD = 5; // pixels – movement beyond this = drag (wate
 // Door geometry
 export const DOOR_W = 3;   // door width in feet
 export const DOOR_H = 6.67; // door height in feet (standard 6'8")
+
+// Fire physics (gas layer / HRR model)
+export const GAS_LAYER_MASS = 200;     // kg — approximate mass of upper gas layer
+export const GAS_CP = 1.0;             // kJ/(kg·K) — specific heat of gas mixture
+export const FLASHOVER_TEMP = 600;     // °C — gas layer temp triggering full room involvement
+export const REIGNITION_TEMP = 500;    // °C — gas layer temp that reignites unsaturated cells
+export const AMBIENT_TEMP = 20;        // °C
+export const CELL_HRR_MAX = 25;        // kW per cell at heat=1.0 (200 cells × 25 = 5 MW max)

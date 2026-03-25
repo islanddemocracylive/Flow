@@ -17,6 +17,11 @@
  * Fire start locations define where fire ignites when a scenario is played.
  */
 
+import {
+  GAS_LAYER_MASS, GAS_CP, FLASHOVER_TEMP, REIGNITION_TEMP,
+  AMBIENT_TEMP, CELL_HRR_MAX,
+} from './constants.js';
+
 export class FireSimulation {
   constructor(cols, rows) {
     this.cols = cols;
@@ -48,6 +53,14 @@ export class FireSimulation {
 
     // Fire start locations: set of grid indices
     this.startLocations = new Set();
+
+    // HRR & gas layer state
+    this.simTime = 0;              // seconds since ignition
+    this.totalHRR = 0;             // kW, recomputed each tick
+    this.gasLayerTemp = AMBIENT_TEMP; // upper gas layer temperature (°C)
+    this.flashedOver = false;      // true once flashover triggers
+    this.flashoverTimer = 0;       // seconds gas layer > FLASHOVER_TEMP
+    this.growthAlpha = 0.047;      // t² fire growth coefficient (default: fast)
   }
 
   idx(x, y) {
@@ -58,6 +71,11 @@ export class FireSimulation {
     this.heat.fill(0);
     this.nextHeat.fill(0);
     this.moisture.fill(0);
+    this.simTime = 0;
+    this.totalHRR = 0;
+    this.gasLayerTemp = AMBIENT_TEMP;
+    this.flashedOver = false;
+    this.flashoverTimer = 0;
   }
 
   resize(cols, rows) {
@@ -231,6 +249,8 @@ export class FireSimulation {
     const cx = Math.floor(sprayX);
     const cz = Math.floor(sprayZ);
 
+    let totalWaterApplied = 0; // track water for gas layer cooling
+
     for (let dy = -rMax; dy <= rMax; dy++) {
       for (let dx = -rMax; dx <= rMax; dx++) {
         const gx = cx + dx;
@@ -259,7 +279,18 @@ export class FireSimulation {
         const waterDensity = peakDensity * falloff * strengthMul;
         const m = this.moisture[i] + waterDensity * dt;
         this.moisture[i] = m < 1 ? m : 1;
+
+        totalWaterApplied += waterDensity * dt;
       }
+    }
+
+    // Cool the gas layer ("penciling the ceiling").
+    // Water sprayed at the ceiling partially evaporates in the hot gas layer.
+    // Each gallon absorbs ~8.4 kJ. Pencil efficiency ~0.3 (not all water reaches gas).
+    if (totalWaterApplied > 0 && this.gasLayerTemp > AMBIENT_TEMP) {
+      const PENCIL_EFFICIENCY = 0.3;
+      const cooling = (totalWaterApplied * 8.4 * PENCIL_EFFICIENCY) / (GAS_LAYER_MASS * GAS_CP);
+      this.gasLayerTemp = Math.max(AMBIENT_TEMP, this.gasLayerTemp - cooling);
     }
   }
 
@@ -460,10 +491,24 @@ export class FireSimulation {
     const { cols, rows, heat, nextHeat, moisture, spreadSpeed, ignitionThreshold, airflow, ventStrength } = this;
     const hasAirflow = this.vents.length > 0;
 
+    // Track simulation time
+    this.simTime += dt;
+
+    // Compute total HRR from all burning cells
+    let totalHRR = 0;
+    const totalCells = cols * rows;
+    for (let i = 0; i < totalCells; i++) {
+      if (heat[i] > 0) totalHRR += heat[i] * CELL_HRR_MAX;
+    }
+    this.totalHRR = totalHRR;
+
     // Moisture constants
     const EVAP_RATE = 0.05;       // dries from full saturation in ~20s
     const GROWTH_DAMPEN = 0.85;   // at full moisture, self-intensification reduced 85%
     const IGNITION_DAMPEN = 0.95; // at full moisture, ignition chance reduced 95%
+
+    // Gas layer temperature for reignition checks inside the loop
+    const gasTemp = this.gasLayerTemp;
 
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
@@ -565,6 +610,15 @@ export class FireSimulation {
           }
         }
 
+        // Gas layer reignition: hot overhead gas reignites unsaturated cells
+        // (independent of neighbor heat — the radiant flux from the gas layer is global)
+        if (h <= 0 && gasTemp > REIGNITION_TEMP && m < 0.3) {
+          const reignitionChance = dt * (gasTemp - REIGNITION_TEMP) / 200;
+          if (Math.random() < reignitionChance) {
+            h = 0.05 + Math.random() * 0.1;
+          }
+        }
+
         nextHeat[i] = Math.max(0, Math.min(1.0, h));
         moisture[i] = m;
       }
@@ -573,6 +627,51 @@ export class FireSimulation {
     const tmp = this.heat;
     this.heat = this.nextHeat;
     this.nextHeat = tmp;
+
+    // ── Gas layer temperature update ──────────────────────────
+    this._updateGasLayer(dt, totalHRR);
+  }
+
+  /** Update upper gas layer temperature based on fire output and ventilation. */
+  _updateGasLayer(dt, totalHRR) {
+    let temp = this.gasLayerTemp;
+
+    // Heat input from fire (HRR heats the gas layer)
+    temp += (totalHRR * dt) / (GAS_LAYER_MASS * GAS_CP);
+
+    // Vent/door cooling: hot gas escapes through ceiling vents, fresh air from doors
+    const ceilingVents = this.vents.filter(v => v.type === 'ceiling');
+    const doors = this.vents.filter(v => v.type === 'door');
+    const ventCool = ceilingVents.length * 2.0 + doors.length * 1.0; // °C/s base rate
+    temp -= ventCool * this.ventStrength * dt;
+
+    // Ambient radiation/convection loss (slow passive cooling toward ambient)
+    temp -= 0.5 * dt * (temp - AMBIENT_TEMP) / 300;
+
+    // Clamp
+    temp = Math.max(AMBIENT_TEMP, Math.min(1200, temp));
+    this.gasLayerTemp = temp;
+
+    // Flashover check: sustained gas layer temp > FLASHOVER_TEMP for 5 seconds
+    if (temp > FLASHOVER_TEMP) {
+      this.flashoverTimer += dt;
+      if (this.flashoverTimer >= 5 && !this.flashedOver) {
+        this.flashedOver = true;
+        this._triggerFlashover();
+      }
+    } else {
+      this.flashoverTimer = 0;
+    }
+  }
+
+  /** Flashover: rapidly ignite all remaining cells. */
+  _triggerFlashover() {
+    const total = this.cols * this.rows;
+    for (let i = 0; i < total; i++) {
+      if (this.heat[i] < 0.5) {
+        this.heat[i] = 0.5 + Math.random() * 0.3;
+      }
+    }
   }
 
   getStats() {
@@ -608,6 +707,7 @@ export class FireSimulation {
         waterRadius: this.waterRadius,
         sprayPSI: this.sprayPSI,
         ventStrength: this.ventStrength,
+        growthAlpha: this.growthAlpha,
       },
     };
   }

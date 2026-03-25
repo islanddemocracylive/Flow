@@ -307,7 +307,7 @@ function loop(now) {
 
   // Send heat data to remote viewers (throttled to 20fps)
   if (net && net.connected && now - lastNetSend > 50) {
-    net.sendHeat(sim.heat);
+    net.sendHeat(sim.heat, sim.gasLayerTemp);
     lastNetSend = now;
   }
 

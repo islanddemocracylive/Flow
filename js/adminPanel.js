@@ -180,6 +180,15 @@ export function setupAdminPanel(sim, state, net) {
   bindSlider('spray-psi', 'spray-psi-val', 'sprayPSI');
   bindSlider('vent-strength', 'vent-strength-val', 'ventStrength', v => v.toFixed(1));
 
+  // Growth rate slider — display as category label
+  function growthLabel(v) {
+    if (v <= 0.006) return 'Slow';
+    if (v <= 0.025) return 'Medium';
+    if (v <= 0.1) return 'Fast';
+    return 'Ultra-fast';
+  }
+  bindSlider('growth-alpha', 'growth-alpha-val', 'growthAlpha', growthLabel);
+
   // GPM readout: updates whenever PSI slider changes
   function updateGPMDisplay() {
     const gpmEl = document.getElementById('spray-gpm-val');
@@ -196,6 +205,12 @@ export function setupAdminPanel(sim, state, net) {
       ['water-radius', 'water-radius-val', 'waterRadius', null],
       ['spray-psi', 'spray-psi-val', 'sprayPSI', null],
       ['vent-strength', 'vent-strength-val', 'ventStrength', v => v.toFixed(1)],
+      ['growth-alpha', 'growth-alpha-val', 'growthAlpha', v => {
+        if (v <= 0.006) return 'Slow';
+        if (v <= 0.025) return 'Medium';
+        if (v <= 0.1) return 'Fast';
+        return 'Ultra-fast';
+      }],
     ];
     for (const [sliderId, displayId, prop, format] of pairs) {
       const slider = document.getElementById(sliderId);
