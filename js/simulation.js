@@ -701,7 +701,11 @@ export class FireSimulation {
               }
             }
 
-            if (Math.random() < ignitionChance) {
+            // Guaranteed ignition when heavily surrounded by fire
+            // (prevents unrealistic "holes" in the fire front)
+            if (count >= 5 && avgNeighbor > 0.3 && m < 0.5) {
+              h = 0.05 + Math.random() * 0.1;
+            } else if (Math.random() < ignitionChance) {
               h = 0.05 + Math.random() * 0.1;
             }
           } else if (h > 0 && !this.ventLimited) {
