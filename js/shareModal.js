@@ -35,10 +35,11 @@ export function setupShareModal(sim) {
     }
   });
 
-  // "Open in New Window" link inside modal – save scenario first
+  // "Open in New Window" link inside modal – save scenario first, then close modal
   if (openViewerLink && sim) {
     openViewerLink.addEventListener('click', () => {
       localStorage.setItem('flow_viewer_scenario', JSON.stringify(sim.toScenarioData()));
+      shareModal.style.display = 'none';
     });
   }
 
