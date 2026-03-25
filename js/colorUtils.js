@@ -79,12 +79,14 @@ export function gasLayerColor(temp) {
 
 /**
  * Convert heat value [0,1] to a THREE.Color for 3D ceiling panels.
- * Returns a THREE.Color instance.
+ * Returns a reused THREE.Color instance — callers must copy or use immediately
+ * (do NOT store the reference across frames).
  */
-const BASE_COLOR = null; // lazily initialized
+const _tempColor = typeof THREE !== 'undefined' ? new THREE.Color() : null;
 
 export function heatToColor(heat) {
-  if (!(heat > 0)) return new THREE.Color(0x1a1a24); // covers 0, negative, NaN, undefined
+  if (!_tempColor) return null;
+  if (!(heat > 0)) { _tempColor.setHex(0x1a1a24); return _tempColor; }
 
   const t = Math.min(heat, 1);
   let r, g, b;
@@ -111,5 +113,6 @@ export function heatToColor(heat) {
   g = Math.min(1, g * flicker);
   b = Math.min(1, b * flicker);
 
-  return new THREE.Color(r, g, b);
+  _tempColor.setRGB(r, g, b);
+  return _tempColor;
 }

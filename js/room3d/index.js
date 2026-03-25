@@ -70,6 +70,7 @@ const room3d = {
     buildStartMarkers(sim);
 
     let totalGlow = 0;
+    let fireCX = 0, fireCZ = 0, fireWeight = 0;
 
     for (let i = 0; i < panelMeshes.length; i++) {
       const { mesh, col, row } = panelMeshes[i];
@@ -87,14 +88,22 @@ const room3d = {
       }
 
       totalGlow += heat;
+      if (heat > 0) {
+        fireCX += (col + 0.5) * heat;
+        fireCZ += (row + 0.5) * heat;
+        fireWeight += heat;
+      }
     }
 
-
-    // Update dynamic fire light
+    // Update dynamic fire light — track fire centroid
     if (fireLight) {
       const avgHeat = totalGlow / panelMeshes.length;
       fireLight.intensity = avgHeat * 3;
       fireLight.color.setHSL(0.05, 1, 0.5 + avgHeat * 0.3);
+      if (fireWeight > 0) {
+        fireLight.position.x = fireCX / fireWeight;
+        fireLight.position.z = fireCZ / fireWeight;
+      }
     }
 
     // Update gas layer plane (descending smoke sheet)

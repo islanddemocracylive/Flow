@@ -4,8 +4,6 @@
 
 import { ROOM_W, ROOM_D, ROOM_H } from '../constants.js';
 
-const EYE_HEIGHT = 6;
-
 const container = document.getElementById('room3d-container');
 
 let scene, camera, renderer;
@@ -15,8 +13,9 @@ if (container && typeof THREE !== 'undefined') {
   scene.background = new THREE.Color(0x0a0a14);
 
   camera = new THREE.PerspectiveCamera(75, 1, 0.1, 100);
-  camera.position.set(ROOM_W / 2, EYE_HEIGHT, ROOM_D + 5);
-  camera.lookAt(ROOM_W / 2, EYE_HEIGHT, ROOM_D / 2);
+  const orbitEye = ROOM_H * 0.75; // orbit view default eye height
+  camera.position.set(ROOM_W / 2, orbitEye, ROOM_D + 5);
+  camera.lookAt(ROOM_W / 2, orbitEye, ROOM_D / 2);
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));

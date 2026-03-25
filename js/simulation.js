@@ -18,14 +18,12 @@
  */
 
 import {
+  ROOM_H, ROOM_ROOM_H_M, FT_TO_M,
   GAS_LAYER_MASS, GAS_CP, FLASHOVER_TEMP, REIGNITION_TEMP,
   AMBIENT_TEMP, CELL_HRR_MAX,
   ROOM_AIR_MASS, AMBIENT_O2, O2_FLAMING_LIMIT, O2_LETHAL_LIMIT, O2_PER_MJ,
   DOOR_AREA_M2, DOOR_HEIGHT_M, VENT_AREA_M2,
 } from './constants.js';
-
-// Ceiling height in metres (for Alpert correlations)
-const H_M = 2.44; // 8 ft
 
 export class FireSimulation {
   constructor(cols, rows) {
@@ -173,8 +171,7 @@ export class FireSimulation {
    */
   getSprayParams(worldX, worldZ, playerPos) {
     const HOSE_HEIGHT = 4;              // hose held at chest level (ft)
-    const CEILING_H = 9;               // room ceiling height (ft)
-    const verticalDist = CEILING_H - HOSE_HEIGHT; // 5ft
+    const verticalDist = ROOM_H - HOSE_HEIGHT;
 
     // 3D distance from hose to ceiling hit point
     const dx = worldX - playerPos.x;
@@ -722,13 +719,13 @@ export class FireSimulation {
             const dx = x - fireCX;
             const dy = y - fireCY;
             const rFt = Math.sqrt(dx * dx + dy * dy);
-            const rM = Math.max(0.5, rFt * 0.3048);
-            const rOverH = rM / H_M;
+            const rM = Math.max(0.5, rFt * FT_TO_M);
+            const rOverH = rM / ROOM_H_M;
             let ceilingJetDT;
             if (rOverH <= 0.18) {
-              ceilingJetDT = 16.9 * Math.pow(alpertHRR, 2/3) / Math.pow(H_M, 5/3);
+              ceilingJetDT = 16.9 * Math.pow(alpertHRR, 2/3) / Math.pow(ROOM_H_M, 5/3);
             } else {
-              ceilingJetDT = 5.38 * Math.pow(alpertHRR / rM, 2/3) / H_M;
+              ceilingJetDT = 5.38 * Math.pow(alpertHRR / rM, 2/3) / ROOM_H_M;
             }
             // Convert ceiling jet ΔT to heat flux (kW/cell)
             exposureRate += ceilingJetDT * 0.01;

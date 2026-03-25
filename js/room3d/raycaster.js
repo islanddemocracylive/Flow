@@ -83,8 +83,10 @@ function buildEllipseGeometry(worldX, worldZ, majorR, minorR, sprayAngle) {
   }
 
   const geo = sprayIndicator.geometry;
-  geo.setAttribute('position', new THREE.BufferAttribute(_ellipsePositions, 3));
-  geo.setIndex(_ellipseIndices);
+  if (!geo.attributes.position) {
+    geo.setAttribute('position', new THREE.BufferAttribute(_ellipsePositions, 3));
+    geo.setIndex(_ellipseIndices);
+  }
   geo.attributes.position.needsUpdate = true;
   geo.computeBoundingSphere();
 }

@@ -185,6 +185,9 @@ function loop() {
     room3d.render(sim);
   }
 
+  // Update HUD
+  _updateViewerHUD(sim);
+
   if (statusEl) {
     if (net.connected) {
       statusEl.textContent = 'Connected';
@@ -199,6 +202,55 @@ function loop() {
 }
 
 requestAnimationFrame(loop);
+
+// ── Viewer HUD ──────────────────────────────────────────
+const hudGas = document.getElementById('hud-gas');
+const hudHRR = document.getElementById('hud-hrr');
+const hudO2 = document.getElementById('hud-o2');
+const hudVent = document.getElementById('hud-vent');
+const endstateEl = document.getElementById('viewer-endstate');
+let lastGameState = 'idle';
+
+function _updateViewerHUD(sim) {
+  if (hudGas) {
+    const temp = Math.round(sim.gasLayerTemp || 20);
+    hudGas.textContent = `Gas: ${temp}°C`;
+    hudGas.style.color = temp > 500 ? '#e85020' : temp > 300 ? '#ffcc66' : '#aaa';
+  }
+  if (hudHRR) {
+    hudHRR.textContent = `HRR: ${((sim.totalHRR || 0) / 1000).toFixed(1)} MW`;
+  }
+  if (hudO2) {
+    const o2 = sim.oxygenLevel || 20.9;
+    hudO2.textContent = `O\u2082: ${o2.toFixed(1)}%`;
+    hudO2.style.color = o2 > 18 ? 'rgba(100,200,100,0.8)' : o2 > 15 ? 'rgba(255,200,80,0.9)' : 'rgba(255,80,60,0.9)';
+  }
+  if (hudVent) {
+    hudVent.style.display = sim.ventLimited ? 'block' : 'none';
+  }
+  // Win/lose overlay
+  if (endstateEl && sim.gameState !== lastGameState) {
+    lastGameState = sim.gameState;
+    if (sim.gameState === 'win') {
+      endstateEl.style.display = 'flex';
+      endstateEl.style.background = 'rgba(0,40,0,0.5)';
+      endstateEl.style.color = 'rgba(40,180,60,0.9)';
+      endstateEl.textContent = 'FIRE SUPPRESSED';
+    } else if (sim.gameState === 'lose_flashover') {
+      endstateEl.style.display = 'flex';
+      endstateEl.style.background = 'rgba(60,10,0,0.6)';
+      endstateEl.style.color = 'rgba(255,80,20,0.95)';
+      endstateEl.textContent = 'FLASHOVER';
+    } else if (sim.gameState === 'lose_oxygen') {
+      endstateEl.style.display = 'flex';
+      endstateEl.style.background = 'rgba(0,10,40,0.6)';
+      endstateEl.style.color = 'rgba(100,160,255,0.95)';
+      endstateEl.textContent = 'OXYGEN DEPLETED';
+    } else {
+      endstateEl.style.display = 'none';
+    }
+  }
+}
 
 // Initial + dynamic resize
 if (room3d.available) {

@@ -64,6 +64,25 @@
   </div>
   <div id="status">Connecting...</div>
 
+  <!-- Firefighter HUD overlay -->
+  <div id="viewer-hud" style="
+    position: fixed; top: 12px; left: 16px; z-index: 10;
+    font: bold 13px/1.6 monospace; user-select: none; pointer-events: none;
+  ">
+    <div id="hud-gas" style="color: #aaa;">Gas: --</div>
+    <div id="hud-hrr" style="color: rgba(255,180,80,0.8);">HRR: --</div>
+    <div id="hud-o2" style="color: rgba(100,200,100,0.8);">O₂: --</div>
+    <div id="hud-vent" style="color: rgba(100,150,255,0.8); display:none;">VENT LIMITED</div>
+  </div>
+
+  <!-- Win/lose overlay -->
+  <div id="viewer-endstate" style="
+    position: fixed; inset: 0; z-index: 20;
+    display: none; align-items: center; justify-content: center;
+    font: bold 36px/1 sans-serif; text-align: center;
+    pointer-events: none;
+  "></div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script type="module" src="js/viewer-app.js"></script>
 </body>

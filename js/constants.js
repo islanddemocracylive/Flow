@@ -2,14 +2,19 @@
  * Shared constants used across simulation, 2D rendering, and 3D visualization.
  */
 
-// Grid dimensions (1 ft² panels)
-export const GRID_COLS = 20;
-export const GRID_ROWS = 10;
+// Room dimensions in feet (mapped 1:1 to Three.js units and grid cells)
+// Grid is 1 ft² per cell, so GRID_COLS = ROOM_W, GRID_ROWS = ROOM_D.
+export const ROOM_W = 20;  // x-axis (columns / width in feet)
+export const ROOM_D = 10;  // z-axis (rows / depth in feet)
+export const ROOM_H = 8;   // y-axis (ceiling height in feet) — spec: 8 ft
 
-// Room dimensions in feet (mapped 1:1 to Three.js units)
-export const ROOM_W = 20;  // x-axis (columns)
-export const ROOM_D = 10;  // z-axis (rows)
-export const ROOM_H = 9;   // y-axis (height)
+// Derived: grid dimensions match room footprint at 1 ft² per cell
+export const GRID_COLS = ROOM_W;
+export const GRID_ROWS = ROOM_D;
+
+// Metric conversions for physics (Alpert correlations, etc.)
+export const FT_TO_M = 0.3048;
+export const ROOM_H_M = ROOM_H * FT_TO_M;  // ceiling height in metres
 
 // Input
 export const DRAG_THRESHOLD = 5; // pixels – movement beyond this = drag (water)
