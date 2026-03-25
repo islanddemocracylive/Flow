@@ -324,6 +324,15 @@ export class FireSimulation {
           this.heatExposure[i] = 0;
         }
 
+        // Water cools preheating cells — reduce accumulated heat exposure
+        if (this.cellState[i] === CELL_PREHEATING) {
+          this.heatExposure[i] = Math.max(0, this.heatExposure[i] - suppressionRate * falloff * dt * 10);
+          if (this.heatExposure[i] < 0.5) {
+            this.cellState[i] = CELL_SUPPRESSED;
+            this.heatExposure[i] = 0;
+          }
+        }
+
         // Accumulate moisture – peak water density × falloff at this cell.
         // Saturates at 1.0 in ~0.5s of continuous direct spray overhead.
         const waterDensity = peakDensity * falloff * strengthMul;
