@@ -310,6 +310,9 @@ export class FireSimulation {
         const cooled = this.heat[i] - suppressionRate * falloff * dt;
         this.heat[i] = cooled > 0 ? cooled : 0; // also handles NaN → 0
 
+        // Clear heat exposure when water suppresses a cell (spec §5.4.2)
+        if (this.heat[i] <= 0) this.heatExposure[i] = 0;
+
         // Accumulate moisture – peak water density × falloff at this cell.
         // Saturates at 1.0 in ~0.5s of continuous direct spray overhead.
         const waterDensity = peakDensity * falloff * strengthMul;
@@ -320,13 +323,20 @@ export class FireSimulation {
       }
     }
 
-    // Cool the gas layer ("penciling the ceiling").
-    // Water sprayed at the ceiling partially evaporates in the hot gas layer.
-    // Each gallon absorbs ~8.4 kJ. Pencil efficiency ~0.3 (not all water reaches gas).
+    // Cool the gas layer ("penciling the ceiling", spec §5.6).
+    // Total gallons actually sprayed this tick = GPM/60 × dt.
+    // Only a fraction evaporates in the gas layer (pencil efficiency ~0.3).
+    // Each gallon of water: 1 gal = 3.785 kg. Absorbs 2.6 MJ/kg = 9.84 MJ/gal.
+    // dT = -(gallons × 9840 kJ/gal × efficiency) / (m_layer × Cp)
+    // At 150 GPM, 1s burst: 2.5 gal × 9840 × 0.3 / (200 × 1.0) = 36.9°C drop.
+    // Spec says 7-10°C per 1s burst — our efficiency 0.3 is about right if we
+    // account for the spray being directed at the ceiling surface, not the gas.
     if (totalWaterApplied > 0 && this.gasLayerTemp > AMBIENT_TEMP) {
-      const PENCIL_EFFICIENCY = 0.3;
-      const cooling = (totalWaterApplied * 8.4 * PENCIL_EFFICIENCY) / (GAS_LAYER_MASS * GAS_CP);
-      this.gasLayerTemp = Math.max(AMBIENT_TEMP, this.gasLayerTemp - cooling);
+      const PENCIL_EFFICIENCY = 0.08; // most water hits ceiling surface, not gas layer
+      const gallonsThisTick = gps * dt; // actual gallons sprayed
+      const coolingKJ = gallonsThisTick * 9840 * PENCIL_EFFICIENCY; // kJ absorbed
+      const dT = coolingKJ / (GAS_LAYER_MASS * GAS_CP);
+      this.gasLayerTemp = Math.max(AMBIENT_TEMP, this.gasLayerTemp - dT);
     }
   }
 
@@ -534,14 +544,25 @@ export class FireSimulation {
 
     this.simTime += dt;
 
-    // ── 1. Compute total HRR from all burning cells ─────────
+    // ── 1. t² HRR target ────────────────────────────────────
+    // The fire's total HRR should follow Q(t) = α · t².
+    // We compute the target HRR for this moment and use it to govern
+    // how hot individual cells can get (capping the feedback loop).
+    const tSquaredHRR = this.growthAlpha * this.simTime * this.simTime; // kW
+    const fuelPeak = 5000; // max fuel-controlled HRR (kW) for this room size
+
+    // ── 2. Compute actual total HRR from burning cells ──────
     let totalHRR = 0;
+    let burningCells = 0;
     const totalCells = cols * rows;
     for (let i = 0; i < totalCells; i++) {
-      if (heat[i] > 0) totalHRR += heat[i] * CELL_HRR_MAX;
+      if (heat[i] > 0) {
+        totalHRR += heat[i] * CELL_HRR_MAX;
+        burningCells++;
+      }
     }
 
-    // ── 2. Ventilation-limited HRR cap ──────────────────────
+    // ── 3. Ventilation-limited HRR cap ──────────────────────
     const ceilingVents = this.vents.filter(v => v.type === 'ceiling');
     const doors = this.vents.filter(v => v.type === 'door');
     const totalVentArea = doors.length * DOOR_AREA_M2 + ceilingVents.length * VENT_AREA_M2;
@@ -550,16 +571,24 @@ export class FireSimulation {
 
     this.ventLimited = this.oxygenLevel < O2_FLAMING_LIMIT;
 
-    let effectiveHRR = totalHRR;
+    // Effective HRR: min of t² target, fuel peak, ventilation cap, and actual burning output
+    let effectiveHRR = Math.min(totalHRR, tSquaredHRR, fuelPeak);
     if (this.ventLimited) {
       effectiveHRR = 0;
-    } else if (ventMaxHRR > 0 && totalHRR > ventMaxHRR) {
+    } else if (ventMaxHRR > 0 && effectiveHRR > ventMaxHRR) {
       effectiveHRR = ventMaxHRR;
     }
+    // Scale factor: how much each cell's burning is dampened
     const hrrScale = totalHRR > 0 ? effectiveHRR / totalHRR : 1;
     this.totalHRR = effectiveHRR;
 
-    // ── 3. O₂ update ────────────────────────────────────────
+    // Target heat per burning cell (governs self-intensification ceiling)
+    // As t² HRR grows, cells are allowed to burn hotter.
+    const targetCellHeat = burningCells > 0
+      ? Math.min(1.0, (effectiveHRR / burningCells) / CELL_HRR_MAX)
+      : 0;
+
+    // ── 4. O₂ update ────────────────────────────────────────
     const o2ConsumedKg = (effectiveHRR * dt / 1000) * O2_PER_MJ;
     const o2ChangePercent = (o2ConsumedKg / (ROOM_AIR_MASS * AMBIENT_O2 / 100)) * 100;
     this.oxygenLevel -= o2ChangePercent;
@@ -575,11 +604,8 @@ export class FireSimulation {
     const o2ReplenishPercent = (freshO2Kg / ROOM_AIR_MASS) * 100;
     this.oxygenLevel = Math.max(0, Math.min(AMBIENT_O2, this.oxygenLevel + o2ReplenishPercent));
 
-    // ── 4. Ceiling jet preheating (Alpert correlations) ─────
-    // Compute the heat flux from the ceiling jet at each unignited cell.
-    // Uses total HRR and distance from fire centroid.
-    // Alpert far-field: ΔT = 5.38 · (Q/r)^(2/3) / H  [°C]
-    // This drives the deterministic heat accumulation.
+    // ── 5. Ceiling jet preheating (Alpert correlations) ─────
+    // Fire centroid for Alpert distance calculations
     let fireCX = 0, fireCY = 0, fireWeight = 0;
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
@@ -589,13 +615,26 @@ export class FireSimulation {
     }
     if (fireWeight > 0) { fireCX /= fireWeight; fireCY /= fireWeight; }
 
-    // Constants for the spread model
+    // Corner fire 4× HRR boost for Alpert (spec §3.3: mirror-image reflections)
+    // If fire centroid is within 2 cells of a corner, apply the virtual fire multiplier
+    let alpertHRR = effectiveHRR;
+    if (fireWeight > 0) {
+      const nearLeft = fireCX < 2;
+      const nearRight = fireCX > cols - 3;
+      const nearTop = fireCY < 2;
+      const nearBottom = fireCY > rows - 3;
+      const wallCount = (nearLeft || nearRight ? 1 : 0) + (nearTop || nearBottom ? 1 : 0);
+      if (wallCount >= 2) alpertHRR *= 4;       // corner: 4× virtual fire
+      else if (wallCount === 1) alpertHRR *= 2;  // wall: 2× virtual fire
+    }
+
+    // Constants
     const EVAP_RATE = 0.05;
     const GROWTH_DAMPEN = 0.85;
-    const IGNITION_THRESHOLD_KJ = 20; // kJ accumulated exposure to ignite (spec: 15-25 kJ)
+    const IGNITION_THRESHOLD_KJ = 20; // kJ (spec: 15-25 kJ)
     const gasTemp = this.gasLayerTemp;
 
-    // ── 5. Per-cell update ───────────────────────────────────
+    // ── 6. Per-cell update ───────────────────────────────────
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const i = y * cols + x;
@@ -614,14 +653,19 @@ export class FireSimulation {
           h = Math.max(0, h - 0.8 * dt);
         }
 
-        // ── Burning cell: intensify ──
+        // ── Burning cell: intensify toward t²-governed target ──
         if (h > 0) {
           if (this.ventLimited) {
             h = Math.max(0, h - 0.02 * dt);
           } else {
-            // Self-intensification (cell burns hotter over time), dampened by moisture
-            const growthRate = 0.3 * hrrScale;
-            h = Math.min(1.0, h + growthRate * dt * (1.0 - h) * (1.0 - m * GROWTH_DAMPEN));
+            // Cell approaches targetCellHeat at a rate governed by the t² curve.
+            // This replaces the old arbitrary 0.3 growth rate — cells can only
+            // burn as hot as the t² curve allows at this moment in time.
+            const target = Math.max(h, targetCellHeat);
+            const diff = target - h;
+            if (diff > 0) {
+              h += diff * 0.5 * dt * (1.0 - m * GROWTH_DAMPEN);
+            }
           }
           if (h < 0.02) h = Math.max(0, h - 0.05 * dt);
 
@@ -638,8 +682,8 @@ export class FireSimulation {
             }
             if (nCount > 0) {
               const avg = neighborHeat / nCount;
-              const diff = avg - h;
-              if (diff > 0) h += diff * 0.3 * dt * (1.0 - m * GROWTH_DAMPEN);
+              const d = avg - h;
+              if (d > 0) h += d * 0.3 * dt * (1.0 - m * GROWTH_DAMPEN);
             }
           }
         }
@@ -655,47 +699,41 @@ export class FireSimulation {
               if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
               const nh = heat[ny * cols + nx];
               if (nh > 0) {
-                // Adjacent burning cell radiates ~2-5 kW to neighbor depending on intensity
-                const dist = (nx !== x && ny !== y) ? 1.414 : 1.0; // diagonal = √2
+                const dist = (nx !== x && ny !== y) ? 1.414 : 1.0;
                 exposureRate += nh * 3.0 / dist;
               }
             }
           }
 
-          // (b) Ceiling jet preheating (Alpert far-field)
-          // Heat flux from the ceiling jet is proportional to ceiling jet ΔT.
-          // ΔT = 5.38 · (Q/r)^(2/3) / H  where r is in metres, Q in kW, H in metres.
-          if (effectiveHRR > 10 && fireWeight > 0) {
+          // (b) Ceiling jet preheating (Alpert correlations with corner boost)
+          if (alpertHRR > 10 && fireWeight > 0) {
             const dx = x - fireCX;
             const dy = y - fireCY;
             const rFt = Math.sqrt(dx * dx + dy * dy);
-            const rM = Math.max(0.5, rFt * 0.3048); // convert ft to m, min 0.5m
+            const rM = Math.max(0.5, rFt * 0.3048);
             const rOverH = rM / H_M;
             let ceilingJetDT;
             if (rOverH <= 0.18) {
-              ceilingJetDT = 16.9 * Math.pow(effectiveHRR, 2/3) / Math.pow(H_M, 5/3);
+              ceilingJetDT = 16.9 * Math.pow(alpertHRR, 2/3) / Math.pow(H_M, 5/3);
             } else {
-              ceilingJetDT = 5.38 * Math.pow(effectiveHRR / rM, 2/3) / H_M;
+              ceilingJetDT = 5.38 * Math.pow(alpertHRR / rM, 2/3) / H_M;
             }
-            // Convert ΔT to an approximate heat flux contribution (kW)
-            // Scale: 100°C ceiling jet ΔT ≈ 1 kW/cell exposure rate
+            // Convert ceiling jet ΔT to heat flux (kW/cell)
             exposureRate += ceilingJetDT * 0.01;
           }
 
-          // (c) Gas layer radiation (global, above reignition temp)
+          // (c) Gas layer radiation (global, spec §5.5.2)
           if (gasTemp > 300) {
             exposureRate += (gasTemp - 300) * 0.005;
           }
 
-          // (d) Airflow directional bonus/penalty
+          // (d) Airflow directional bonus/penalty (spec §4.4)
           if (hasAirflow && exposureRate > 0) {
             const ai = (y * cols + x) * 2;
             const avx = airflow[ai];
             const avy = airflow[ai + 1];
             if (Math.abs(avx) + Math.abs(avy) > 0.01) {
-              // Check if fire is spreading with or against airflow
-              let concurrentBonus = 0;
-              let opposedPenalty = 0;
+              let concurrentBonus = 0, opposedPenalty = 0;
               let cCount = 0, oCount = 0;
               for (let ny2 = y - 1; ny2 <= y + 1; ny2++) {
                 for (let nx2 = x - 1; nx2 <= x + 1; nx2++) {
@@ -709,34 +747,30 @@ export class FireSimulation {
                   else if (dot < -0.3) { opposedPenalty += Math.abs(dot); oCount++; }
                 }
               }
-              if (cCount > 0) {
-                exposureRate *= (1.0 + (concurrentBonus / cCount) * 2.0);
-              }
-              if (oCount > 0 && cCount === 0) {
-                exposureRate *= Math.max(0.2, 1.0 - (opposedPenalty / oCount) * 0.7);
-              }
+              if (cCount > 0) exposureRate *= (1.0 + (concurrentBonus / cCount) * 2.0);
+              if (oCount > 0 && cCount === 0) exposureRate *= Math.max(0.2, 1.0 - (opposedPenalty / oCount) * 0.7);
             }
           }
 
-          // Apply edge multiplier (wall-ceiling junctions accumulate faster)
+          // Apply edge multiplier (wall-ceiling junctions, spec §3.2)
           exposureRate *= edgeMul[i];
 
-          // Moisture resists ignition (wet surface absorbs heat without igniting)
+          // Moisture resists ignition (spec §5.5.1)
           exposureRate *= (1.0 - m * 0.95);
 
           // Accumulate exposure (kW × dt = kJ)
           exposure += exposureRate * dt;
 
-          // Deterministic ignition when threshold reached
+          // Deterministic ignition when threshold reached (spec §3.4)
           if (exposure >= IGNITION_THRESHOLD_KJ) {
             h = 0.05 + 0.05 * Math.min(1, (exposure - IGNITION_THRESHOLD_KJ) / 5);
-            exposure = 0; // reset for re-use if suppressed and reignited
+            exposure = 0;
           }
         }
 
         // Reset exposure if cell is burning or fully wet
         if (h > 0) exposure = 0;
-        if (m > 0.8 && h <= 0) exposure = Math.max(0, exposure - 2 * dt); // wet surface cools
+        if (m > 0.8 && h <= 0) exposure = Math.max(0, exposure - 2 * dt);
 
         nextHeat[i] = Math.max(0, Math.min(1.0, h));
         moisture[i] = m;
@@ -748,10 +782,10 @@ export class FireSimulation {
     this.heat = this.nextHeat;
     this.nextHeat = tmp;
 
-    // ── 6. Gas layer temperature update ─────────────────────
+    // ── 7. Gas layer temperature update ─────────────────────
     this._updateGasLayer(dt, effectiveHRR);
 
-    // ── 7. Win/lose conditions ───────────────────────────────
+    // ── 8. Win/lose conditions ───────────────────────────────
     this._checkWinLose(dt);
   }
 
@@ -765,7 +799,10 @@ export class FireSimulation {
     // Vent/door cooling: proportional to temp difference (hotter gas escapes faster)
     const nCeilingVents = this.vents.filter(v => v.type === 'ceiling').length;
     const nDoors = this.vents.filter(v => v.type === 'door').length;
-    const ventCoolCoeff = nCeilingVents * 0.008 + nDoors * 0.004; // per °C above ambient per second
+    // Spec §4.3: door inflow ~1.36 kg/s of cool air into ~200kg gas layer
+    // Cooling ≈ (m_air · Cp · ΔT) / (m_layer · Cp) = m_air/m_layer per second
+    // 1.36/200 ≈ 0.007 per door. Ceiling vents smaller.
+    const ventCoolCoeff = nCeilingVents * 0.004 + nDoors * 0.007;
     temp -= ventCoolCoeff * (temp - AMBIENT_TEMP) * dt;
 
     // Ambient radiation/convection loss (slow passive cooling toward ambient)
