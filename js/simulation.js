@@ -182,8 +182,8 @@ export class FireSimulation {
     const horizDist = Math.sqrt(dx * dx + dz * dz);
     const totalDist = Math.sqrt(horizDist * horizDist + verticalDist * verticalDist);
 
-    // Max reach scales with PSI: ~30 ft at 100 PSI
-    const maxReach = this.sprayPSI * 0.3;
+    // Max reach scales with PSI: ~20 ft at 100 PSI (spec §5.1: 15-25 ft effective)
+    const maxReach = this.sprayPSI * 0.2;
     if (totalDist > maxReach) return null;
 
     // Cone half-angle (radians): ~8° at 100 PSI with waterRadius=2 (narrow fog).
@@ -563,11 +563,16 @@ export class FireSimulation {
     }
 
     // ── 3. Ventilation-limited HRR cap ──────────────────────
+    // Spec §2.2: Q_max = Σ(1518 · Av_i · √Hv_i) per opening
     const ceilingVents = this.vents.filter(v => v.type === 'ceiling');
     const doors = this.vents.filter(v => v.type === 'door');
-    const totalVentArea = doors.length * DOOR_AREA_M2 + ceilingVents.length * VENT_AREA_M2;
-    const avgVentHeight = doors.length > 0 ? DOOR_HEIGHT_M : (ceilingVents.length > 0 ? 0.5 : 0);
-    const ventMaxHRR = totalVentArea > 0 ? 1518 * totalVentArea * Math.sqrt(avgVentHeight) : 0;
+    let ventMaxHRR = 0;
+    for (let j = 0; j < doors.length; j++) {
+      ventMaxHRR += 1518 * DOOR_AREA_M2 * Math.sqrt(DOOR_HEIGHT_M);
+    }
+    for (let j = 0; j < ceilingVents.length; j++) {
+      ventMaxHRR += 1518 * VENT_AREA_M2 * Math.sqrt(0.5);
+    }
 
     this.ventLimited = this.oxygenLevel < O2_FLAMING_LIMIT;
 
@@ -589,7 +594,14 @@ export class FireSimulation {
       : 0;
 
     // ── 4. O₂ update ────────────────────────────────────────
-    const o2ConsumedKg = (effectiveHRR * dt / 1000) * O2_PER_MJ;
+    // Spec §4.2: sealed 500 kW fire depletes 20.9%→15% in 5-7 minutes.
+    // The well-mixed calculation gives ~81s — too fast by ~4×.
+    // In reality, fire consumes O₂ from the lower cool layer; stratification
+    // means the effective air mass available for combustion is larger than the
+    // simple room volume suggests (hot upper layer recirculates partially).
+    // A mixing factor of 0.25 calibrates to ~5 minutes at 500 kW.
+    const O2_MIXING_FACTOR = 0.25;
+    const o2ConsumedKg = (effectiveHRR * dt / 1000) * O2_PER_MJ * O2_MIXING_FACTOR;
     const o2ChangePercent = (o2ConsumedKg / (ROOM_AIR_MASS * AMBIENT_O2 / 100)) * 100;
     this.oxygenLevel -= o2ChangePercent;
 
