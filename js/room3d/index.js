@@ -109,10 +109,15 @@ const room3d = {
         const tNorm = Math.min(1, (temp - 100) / 500);
         gasLayerPlane.material.opacity = tNorm * 0.5;
 
-        // Y position: descends from ceiling (ROOM_H) toward 40% height as temp rises
+        // Y position: gas layer hugs the ceiling during early growth, then
+        // drops rapidly in the danger zone (400°C+). Uses a quadratic curve
+        // so the layer barely descends until temps are high.
+        // At flashover (600°C): layer is at ~55% of room height (~5 ft),
+        // just below eye level. Post-flashover it can drop further.
         const yTop = ROOM_H;
-        const yBottom = ROOM_H * 0.4;
-        gasLayerPlane.position.y = yTop - tNorm * (yTop - yBottom);
+        const yBottom = ROOM_H * 0.55; // ~5 ft — just below eye level at flashover
+        const dropFraction = tNorm * tNorm; // quadratic: slow start, fast near flashover
+        gasLayerPlane.position.y = yTop - dropFraction * (yTop - yBottom);
 
         // Color: gray → brown → orange → red
         if (temp < 300) {
