@@ -20,12 +20,39 @@ export function raycastCeiling(clientX, clientY) {
   ndcMouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(ndcMouse, camera);
 
-  const hit = raycaster.ray.intersectPlane(ceilingPlane, rayHitPoint);
-  if (!hit) return null;
-  // Clamp to room bounds — if cursor is over a wall, spray hits the nearest
-  // ceiling edge rather than stopping. The simulation handles out-of-grid cells.
-  const worldX = Math.max(0, Math.min(ROOM_W, hit.x));
-  const worldZ = Math.max(0, Math.min(ROOM_D, hit.z));
+  // Compute ceiling intersection manually so it works regardless of ray
+  // direction. THREE's intersectPlane returns null when the ray faces away
+  // from the plane (e.g., looking at a wall or slightly downward).
+  const origin = raycaster.ray.origin;
+  const dir = raycaster.ray.direction;
+
+  // t = (ROOM_H - origin.y) / dir.y
+  // If dir.y is ~0 (horizontal) or negative (looking down), use a large
+  // forward projection along the XZ plane instead — the hose aims at the
+  // ceiling above wherever the cursor points.
+  let worldX, worldZ;
+  if (Math.abs(dir.y) > 0.001) {
+    const t = (ROOM_H - origin.y) / dir.y;
+    if (t > 0) {
+      // Normal case: ray hits ceiling in front of camera
+      worldX = origin.x + dir.x * t;
+      worldZ = origin.z + dir.z * t;
+    } else {
+      // Ray goes away from ceiling — project forward a fixed distance
+      const fwd = 10;
+      worldX = origin.x + dir.x * fwd;
+      worldZ = origin.z + dir.z * fwd;
+    }
+  } else {
+    // Nearly horizontal — project forward
+    const fwd = 10;
+    worldX = origin.x + dir.x * fwd;
+    worldZ = origin.z + dir.z * fwd;
+  }
+
+  // Clamp to room bounds
+  worldX = Math.max(0, Math.min(ROOM_W, worldX));
+  worldZ = Math.max(0, Math.min(ROOM_D, worldZ));
   return { worldX, worldZ };
 }
 
