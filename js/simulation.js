@@ -25,13 +25,20 @@ import {
   DOOR_AREA_M2, DOOR_HEIGHT_M, VENT_AREA_M2,
 } from './constants.js';
 
+// Cell states (spec §3.4)
+export const CELL_UNIGNITED  = 0;
+export const CELL_PREHEATING = 1;
+export const CELL_BURNING    = 2;
+export const CELL_SUPPRESSED = 3;
+
 export class FireSimulation {
   constructor(cols, rows) {
     this.cols = cols;
     this.rows = rows;
-    this.heat = new Float32Array(cols * rows);       // [0-1] display value
+    this.heat = new Float32Array(cols * rows);           // [0-1] fire intensity (burning cells only)
     this.nextHeat = new Float32Array(cols * rows);
-    this.heatExposure = new Float32Array(cols * rows); // accumulated kJ per cell
+    this.heatExposure = new Float32Array(cols * rows);   // accumulated kJ toward ignition
+    this.cellState = new Uint8Array(cols * rows);        // CELL_* state per cell
 
     // Tunable parameters (set from admin panel)
     this.waterRadius = 2;
@@ -97,6 +104,7 @@ export class FireSimulation {
     this.heat.fill(0);
     this.nextHeat.fill(0);
     this.heatExposure.fill(0);
+    this.cellState.fill(CELL_UNIGNITED);
     this.moisture.fill(0);
     this.simTime = 0;
     this.totalHRR = 0;
@@ -115,6 +123,7 @@ export class FireSimulation {
     this.heat = new Float32Array(cols * rows);
     this.nextHeat = new Float32Array(cols * rows);
     this.heatExposure = new Float32Array(cols * rows);
+    this.cellState = new Uint8Array(cols * rows);
     this.airflow = new Float32Array(cols * rows * 2);
     this.obstacles = new Uint8Array(cols * rows);
     this.moisture = new Float32Array(cols * rows);
@@ -135,6 +144,8 @@ export class FireSimulation {
           const strength = 1.0 - (dist / radius) * 0.5;
           const i = this.idx(x, y);
           this.heat[i] = Math.min(1.0, Math.max(this.heat[i], strength));
+          this.cellState[i] = CELL_BURNING;
+          this.heatExposure[i] = 0;
         }
       }
     }
@@ -307,8 +318,11 @@ export class FireSimulation {
         const cooled = this.heat[i] - suppressionRate * falloff * dt;
         this.heat[i] = cooled > 0 ? cooled : 0; // also handles NaN → 0
 
-        // Clear heat exposure when water suppresses a cell (spec §5.4.2)
-        if (this.heat[i] <= 0) this.heatExposure[i] = 0;
+        // When water knocks down a cell, transition to suppressed state
+        if (this.heat[i] <= 0 && this.cellState[i] === CELL_BURNING) {
+          this.cellState[i] = CELL_SUPPRESSED;
+          this.heatExposure[i] = 0;
+        }
 
         // Accumulate moisture – peak water density × falloff at this cell.
         // Saturates at 1.0 in ~0.5s of continuous direct spray overhead.
@@ -551,8 +565,9 @@ export class FireSimulation {
     let totalHRR = 0;
     let burningCells = 0;
     const totalCells = cols * rows;
+    const cellState = this.cellState;
     for (let i = 0; i < totalCells; i++) {
-      if (heat[i] > 0) {
+      if (cellState[i] === CELL_BURNING && heat[i] > 0) {
         totalHRR += heat[i] * CELL_HRR_MAX;
         burningCells++;
       }
@@ -612,8 +627,10 @@ export class FireSimulation {
     let fireCX = 0, fireCY = 0, fireWeight = 0;
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        const h = heat[y * cols + x];
-        if (h > 0) { fireCX += x * h; fireCY += y * h; fireWeight += h; }
+        const idx = y * cols + x;
+        if (cellState[idx] === CELL_BURNING && heat[idx] > 0) {
+          fireCX += x * heat[idx]; fireCY += y * heat[idx]; fireWeight += heat[idx];
+        }
       }
     }
     if (fireWeight > 0) { fireCX /= fireWeight; fireCY /= fireWeight; }
@@ -638,44 +655,48 @@ export class FireSimulation {
     const gasTemp = this.gasLayerTemp;
 
     // ── 6. Per-cell update ───────────────────────────────────
+    const cellState = this.cellState;
+
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const i = y * cols + x;
         let h = heat[i];
         let m = moisture[i];
         let exposure = heatExposure[i];
+        let state = cellState[i];
 
-        // Evaporate moisture — spec §5.5.1: saturated cell needs 60-90s of
-        // sustained radiant heat to dry out. At ambient temp, moisture persists
-        // much longer (wet ceiling stays wet without heat source nearby).
+        // ── Evaporate moisture (spec §5.5.1) ──
         if (m > 0) {
-          // Base evaporation only when gas layer is warm or cell has hot neighbors
           let evapRate = 0;
           if (gasTemp > 100) {
-            // Hot gas layer drives evaporation: 0 at 100°C, full rate at 400°C+
             evapRate = EVAP_RATE * Math.min(1, (gasTemp - 100) / 300);
           }
-          // Ambient evaporation is very slow (wet ceiling stays wet for minutes)
-          evapRate = Math.max(evapRate, EVAP_RATE * 0.05); // ~0.0006/s → ~28 min from full
+          evapRate = Math.max(evapRate, EVAP_RATE * 0.05);
           m = Math.max(0, m - evapRate * dt);
+          // Suppressed cell dries out → becomes unignited (can be preheated again)
+          if (state === CELL_SUPPRESSED && m < 0.01) {
+            state = CELL_UNIGNITED;
+          }
         }
 
-        // Ceiling vent dissipation
+        // ── Ceiling vent dissipation ──
         if (h > 0 && this.isCeilingVent(x, y)) {
           h = Math.max(0, h - 0.8 * dt);
+          if (h <= 0) state = CELL_UNIGNITED;
         }
 
-        // ── Burning cell: intensify freely toward 1.0 ──
-        // The t² cap governs effectiveHRR for physics (Alpert, gas layer, O₂)
-        // but individual cells burn hotter naturally over time.
-        if (h > 0) {
+        // ── BURNING cells: intensify ──
+        if (state === CELL_BURNING) {
           if (this.ventLimited) {
             h = Math.max(0, h - 0.02 * dt);
+            if (h <= 0) state = CELL_UNIGNITED; // smouldered out
           } else {
-            // Self-intensification: cell heats toward 1.0 at diminishing rate
             h = Math.min(1.0, h + 0.15 * dt * (1.0 - h) * (1.0 - m * GROWTH_DAMPEN));
           }
-          if (h < 0.02) h = Math.max(0, h - 0.05 * dt);
+          if (h < 0.02) {
+            h = Math.max(0, h - 0.05 * dt);
+            if (h <= 0) state = CELL_UNIGNITED;
+          }
 
           // Neighbor diffusion: burning cell heats up toward hotter neighbors
           if (!this.ventLimited) {
@@ -694,21 +715,19 @@ export class FireSimulation {
               if (d > 0) h += d * 0.3 * dt * (1.0 - m * GROWTH_DAMPEN);
             }
           }
+          exposure = 0; // burning cells don't accumulate exposure
         }
 
-        // ── Unignited cell: accumulate heat exposure ──
-        if (h <= 0 && !this.ventLimited) {
-          let exposureRate = 0; // kW arriving at this cell
+        // ── NON-BURNING cells: accumulate heat exposure ──
+        if (state !== CELL_BURNING && !this.ventLimited) {
+          let exposureRate = 0;
 
-          // (a) Radiant heat from adjacent burning cells (local physics — NOT
-          // scaled by hrrScale). A burning surface heats its neighbor based on
-          // surface temperature, independent of the room-level t² growth curve.
-          // The t² cap governs long-range ceiling jet preheating (Alpert), not
-          // cell-to-cell radiation.
+          // (a) Radiant heat from adjacent burning cells
           for (let ny = y - 1; ny <= y + 1; ny++) {
             for (let nx = x - 1; nx <= x + 1; nx++) {
               if (nx === x && ny === y) continue;
               if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+              if (cellState[ny * cols + nx] !== CELL_BURNING) continue;
               const nh = heat[ny * cols + nx];
               if (nh > 0) {
                 const dist = (nx !== x && ny !== y) ? 1.414 : 1.0;
@@ -717,11 +736,7 @@ export class FireSimulation {
             }
           }
 
-          // (b) Ceiling jet preheating (Alpert correlations with corner boost)
-          // Only contributes when: cell is dry (m < 0.1), AND ceiling jet ΔT
-          // is high enough to meaningfully preheat toward ignition (300-400°C).
-          // A 97°C jet at 18ft can't ignite anything — only jets above ~150°C
-          // start driving surfaces toward ignition temperature.
+          // (b) Ceiling jet preheating (Alpert) — dry cells only
           if (alpertHRR > 10 && fireWeight > 0 && m < 0.1) {
             const dx = x - fireCX;
             const dy = y - fireCY;
@@ -734,16 +749,12 @@ export class FireSimulation {
             } else {
               ceilingJetDT = 5.38 * Math.pow(alpertHRR / rM, 2/3) / ROOM_H_M;
             }
-            // Only contribute when jet is hot enough to drive toward ignition.
-            // Below 150°C ΔT, the surface barely warms — no meaningful preheating.
             if (ceilingJetDT > 150) {
               exposureRate += (ceilingJetDT - 150) * 0.01;
             }
           }
 
-          // (c) Gas layer radiation (global, spec §5.5.2)
-          // Only at high temps (>500°C per spec) for dry cells. Below 500°C,
-          // the gas layer doesn't produce enough radiant flux to reignite.
+          // (c) Gas layer radiation (spec §5.5.2) — dry cells above 500°C
           if (gasTemp > REIGNITION_TEMP && m < 0.3) {
             exposureRate += (gasTemp - REIGNITION_TEMP) * 0.01;
           }
@@ -760,7 +771,7 @@ export class FireSimulation {
                 for (let nx2 = x - 1; nx2 <= x + 1; nx2++) {
                   if (nx2 === x && ny2 === y) continue;
                   if (nx2 < 0 || nx2 >= cols || ny2 < 0 || ny2 >= rows) continue;
-                  if (heat[ny2 * cols + nx2] <= 0) continue;
+                  if (cellState[ny2 * cols + nx2] !== CELL_BURNING) continue;
                   const ddx = x - nx2, ddy = y - ny2;
                   const dMag = Math.sqrt(ddx * ddx + ddy * ddy);
                   const dot = (ddx / dMag) * avx + (ddy / dMag) * avy;
@@ -773,29 +784,41 @@ export class FireSimulation {
             }
           }
 
-          // Apply edge multiplier (wall-ceiling junctions, spec §3.2)
+          // Apply edge multiplier (spec §3.2)
           exposureRate *= edgeMul[i];
 
-          // Moisture resists ignition (spec §5.5.1)
+          // Moisture resists preheating (spec §5.5.1)
           exposureRate *= (1.0 - m * 0.95);
 
           // Accumulate exposure (kW × dt = kJ)
-          exposure += exposureRate * dt;
+          if (exposureRate > 0) {
+            exposure += exposureRate * dt;
+            // Transition to PREHEATING when exposure starts accumulating
+            if (state === CELL_UNIGNITED && exposure > 0.5) {
+              state = CELL_PREHEATING;
+            }
+          }
+
+          // Wet cells cool down (exposure decays)
+          if (m > 0.5 && exposureRate <= 0) {
+            exposure = Math.max(0, exposure - 2 * dt);
+            if (exposure < 0.5 && state === CELL_PREHEATING) {
+              state = CELL_UNIGNITED;
+            }
+          }
 
           // Deterministic ignition when threshold reached (spec §3.4)
           if (exposure >= IGNITION_THRESHOLD_KJ) {
             h = 0.05 + 0.05 * Math.min(1, (exposure - IGNITION_THRESHOLD_KJ) / 5);
+            state = CELL_BURNING;
             exposure = 0;
           }
         }
 
-        // Reset exposure if cell is burning or fully wet
-        if (h > 0) exposure = 0;
-        if (m > 0.8 && h <= 0) exposure = Math.max(0, exposure - 2 * dt);
-
         nextHeat[i] = Math.max(0, Math.min(1.0, h));
         moisture[i] = m;
         heatExposure[i] = exposure;
+        cellState[i] = state;
       }
     }
 
@@ -849,8 +872,10 @@ export class FireSimulation {
   _triggerFlashover() {
     const total = this.cols * this.rows;
     for (let i = 0; i < total; i++) {
-      if (this.heat[i] < 0.5) {
+      if (this.cellState[i] !== CELL_BURNING) {
         this.heat[i] = 0.5 + Math.random() * 0.3;
+        this.cellState[i] = CELL_BURNING;
+        this.heatExposure[i] = 0;
       }
     }
   }
@@ -875,7 +900,7 @@ export class FireSimulation {
     let burning = 0;
     const total = this.cols * this.rows;
     for (let i = 0; i < total; i++) {
-      if (this.heat[i] > 0) { burning++; break; }
+      if (this.cellState[i] === CELL_BURNING) { burning++; break; }
     }
     if (burning === 0 && this.simTime > 5) {
       // Need some time to have passed (don't win instantly)

@@ -28,26 +28,30 @@ const statusEl = document.getElementById('status');
 const net = new SimNetwork('viewer');
 
 net.onHeatData = (heatArray) => {
-  // Heat values followed by metadata: [gasLayerTemp, oxygenLevel, gameStateCode]
-  const heatLen = sim.cols * sim.rows;
-  for (let i = 0; i < heatLen; i++) {
+  // Layout: [heat × n] [metadata × 4] [cellState × n] [heatExposure × n]
+  const n = sim.cols * sim.rows;
+  for (let i = 0; i < n; i++) {
     const v = heatArray[i];
-    sim.heat[i] = v > 0 ? (v < 1 ? v : 1) : 0; // also handles NaN → 0
+    sim.heat[i] = v > 0 ? (v < 1 ? v : 1) : 0;
   }
-  // Extract metadata (appended after heat data)
-  if (heatArray.length > heatLen) {
-    sim.gasLayerTemp = heatArray[heatLen];
-  }
-  if (heatArray.length > heatLen + 1) {
-    sim.oxygenLevel = heatArray[heatLen + 1];
-  }
-  if (heatArray.length > heatLen + 2) {
-    const gsCode = heatArray[heatLen + 2];
+  // Metadata
+  const meta = n;
+  if (heatArray.length > meta) sim.gasLayerTemp = heatArray[meta];
+  if (heatArray.length > meta + 1) sim.oxygenLevel = heatArray[meta + 1];
+  if (heatArray.length > meta + 2) {
+    const gsCode = heatArray[meta + 2];
     const gsNames = ['running', 'win', 'lose_flashover', 'lose_oxygen'];
     sim.gameState = gsNames[gsCode] || 'running';
   }
-  if (heatArray.length > heatLen + 3) {
-    sim.totalHRR = heatArray[heatLen + 3];
+  if (heatArray.length > meta + 3) sim.totalHRR = heatArray[meta + 3];
+  // Cell state + heat exposure
+  const csBase = meta + 4;
+  const exBase = csBase + n;
+  if (heatArray.length >= exBase + n) {
+    for (let i = 0; i < n; i++) {
+      sim.cellState[i] = heatArray[csBase + i];
+      sim.heatExposure[i] = heatArray[exBase + i];
+    }
   }
 };
 

@@ -10,7 +10,7 @@
  *   - Design mode indicator
  */
 
-import { heatToRGB, gasLayerColor } from './colorUtils.js';
+import { cellToRGB, gasLayerColor } from './colorUtils.js';
 
 const canvas = document.getElementById('simulation-canvas');
 const ctx = canvas ? canvas.getContext('2d') : null;
@@ -67,13 +67,12 @@ export function render2D(sim, state) {
       const py0 = offsetY + Math.floor(gy * cellSize);
       const ps = Math.floor(cellSize);
 
-      // Base cell color
-      let r, g, b;
-      if (heat > 0) {
-        ({ r, g, b } = heatToRGB(heat));
-      } else {
-        r = 18; g = 18; b = 26;
-      }
+      // State-aware cell color
+      const idx = sim.idx(gx, gy);
+      const state = sim.cellState ? sim.cellState[idx] : (heat > 0 ? 2 : 0);
+      const exposureNorm = sim.heatExposure ? sim.heatExposure[idx] / 20 : 0; // 20 kJ threshold
+      const moisture = sim.moisture ? sim.moisture[idx] : 0;
+      const { r, g, b } = cellToRGB(state, heat, exposureNorm, moisture);
 
       ctx.fillStyle = `rgb(${r},${g},${b})`;
       ctx.fillRect(px0, py0, ps, ps);

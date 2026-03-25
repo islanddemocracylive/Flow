@@ -6,7 +6,7 @@
  */
 
 import { ROOM_W, ROOM_D, ROOM_H, DOOR_H } from '../constants.js';
-import { heatToColor } from '../colorUtils.js';
+import { cellToColor } from '../colorUtils.js';
 import { container, scene, camera, renderer, fireLight, gasLayerPlane } from './scene.js';
 import { FLASHOVER_TEMP, AMBIENT_TEMP } from '../constants.js';
 import { buildWalls, wallGroup, doorFrameGroup } from './walls.js';
@@ -81,7 +81,11 @@ const room3d = {
         mesh.material.opacity = 0.3;
         mesh.material.transparent = true;
       } else {
-        const color = heatToColor(heat);
+        const idx = sim.idx(col, row);
+        const state = sim.cellState ? sim.cellState[idx] : (heat > 0 ? 2 : 0);
+        const exposureNorm = sim.heatExposure ? sim.heatExposure[idx] / 20 : 0;
+        const moisture = sim.moisture ? sim.moisture[idx] : 0;
+        const color = cellToColor(state, heat, exposureNorm, moisture);
         mesh.material.color.copy(color);
         mesh.material.opacity = 1;
         mesh.material.transparent = false;
