@@ -325,12 +325,11 @@ export class FireSimulation {
 
     // Cool the gas layer ("penciling the ceiling", spec §5.6).
     // Total gallons actually sprayed this tick = GPM/60 × dt.
-    // Only a fraction evaporates in the gas layer (pencil efficiency ~0.3).
     // Each gallon of water: 1 gal = 3.785 kg. Absorbs 2.6 MJ/kg = 9.84 MJ/gal.
     // dT = -(gallons × 9840 kJ/gal × efficiency) / (m_layer × Cp)
-    // At 150 GPM, 1s burst: 2.5 gal × 9840 × 0.3 / (200 × 1.0) = 36.9°C drop.
-    // Spec says 7-10°C per 1s burst — our efficiency 0.3 is about right if we
-    // account for the spray being directed at the ceiling surface, not the gas.
+    // At 150 GPM, 1s burst: 2.5 gal × 9840 × 0.08 / (200 × 1.0) = 9.84°C drop.
+    // Spec says 7-10°C per 1s burst — 8% efficiency accounts for most water
+    // hitting the ceiling surface rather than evaporating in the gas layer.
     if (totalWaterApplied > 0 && this.gasLayerTemp > AMBIENT_TEMP) {
       const PENCIL_EFFICIENCY = 0.08; // most water hits ceiling surface, not gas layer
       const gallonsThisTick = gps * dt; // actual gallons sprayed
@@ -583,8 +582,6 @@ export class FireSimulation {
     } else if (ventMaxHRR > 0 && effectiveHRR > ventMaxHRR) {
       effectiveHRR = ventMaxHRR;
     }
-    // Scale factor: how much each cell's burning is dampened
-    const hrrScale = totalHRR > 0 ? effectiveHRR / totalHRR : 1;
     this.totalHRR = effectiveHRR;
 
     // Target heat per burning cell (governs self-intensification ceiling)
@@ -602,7 +599,10 @@ export class FireSimulation {
     // A mixing factor of 0.25 calibrates to ~5 minutes at 500 kW.
     const O2_MIXING_FACTOR = 0.25;
     const o2ConsumedKg = (effectiveHRR * dt / 1000) * O2_PER_MJ * O2_MIXING_FACTOR;
-    const o2ChangePercent = (o2ConsumedKg / (ROOM_AIR_MASS * AMBIENT_O2 / 100)) * 100;
+    // Convert kg O₂ consumed to absolute change in O₂ percentage of air.
+    // o2ChangePercent = (consumed_kg / total_air_mass) × 100
+    // (NOT divided by O₂ mass — that would give fraction-of-O₂, not pp change)
+    const o2ChangePercent = (o2ConsumedKg / ROOM_AIR_MASS) * 100;
     this.oxygenLevel -= o2ChangePercent;
 
     let airInflowKgPerSec = 0;
