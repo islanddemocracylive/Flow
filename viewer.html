@@ -16,11 +16,11 @@
     }
     #status.connected { color: #4a4; }
 
-    /* D-pad */
+    /* D-pad — bottom LEFT */
     .dpad {
       position: absolute;
       bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-      right: calc(20px + env(safe-area-inset-right, 0px));
+      left: calc(20px + env(safe-area-inset-left, 0px));
       width: 120px;
       height: 120px;
       z-index: 50;
@@ -51,16 +51,61 @@
     .dpad-down  { bottom: 0; left: 50%; transform: translateX(-50%); }
     .dpad-left  { top: 50%; left: 0;   transform: translateY(-50%); }
     .dpad-right { top: 50%; right: 0;  transform: translateY(-50%); }
+
+    /* Spray button — bottom RIGHT */
+    #spray-btn {
+      position: absolute;
+      bottom: calc(35px + env(safe-area-inset-bottom, 0px));
+      right: calc(35px + env(safe-area-inset-right, 0px));
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      background: rgba(68, 170, 255, 0.2);
+      border: 2px solid rgba(68, 170, 255, 0.4);
+      color: rgba(200, 230, 255, 0.8);
+      font: bold 11px/1 sans-serif;
+      cursor: pointer;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #spray-btn:active, #spray-btn.active {
+      background: rgba(68, 170, 255, 0.5);
+      border-color: rgba(100, 200, 255, 0.7);
+    }
+
+    /* Crosshair */
+    #crosshair {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 20px; height: 20px;
+      pointer-events: none;
+      z-index: 40;
+    }
+    #crosshair::before, #crosshair::after {
+      content: '';
+      position: absolute;
+      background: rgba(255,255,255,0.4);
+    }
+    #crosshair::before { top: 50%; left: 0; right: 0; height: 1px; transform: translateY(-50%); }
+    #crosshair::after  { left: 50%; top: 0; bottom: 0; width: 1px; transform: translateX(-50%); }
   </style>
 </head>
 <body>
   <div id="room3d-container">
+    <div id="crosshair"></div>
     <div id="dpad" class="dpad">
       <button id="dpad-up" class="dpad-btn dpad-up" aria-label="Move forward">&#9650;</button>
       <button id="dpad-left" class="dpad-btn dpad-left" aria-label="Strafe left">&#9664;</button>
       <button id="dpad-down" class="dpad-btn dpad-down" aria-label="Move backward">&#9660;</button>
       <button id="dpad-right" class="dpad-btn dpad-right" aria-label="Strafe right">&#9654;</button>
     </div>
+    <button id="spray-btn" aria-label="Spray water">SPRAY</button>
   </div>
   <div id="status">Connecting...</div>
 
@@ -71,7 +116,7 @@
   ">
     <div id="hud-gas" style="color: #aaa;">Gas: --</div>
     <div id="hud-hrr" style="color: rgba(255,180,80,0.8);">HRR: --</div>
-    <div id="hud-o2" style="color: rgba(100,200,100,0.8);">O₂: --</div>
+    <div id="hud-o2" style="color: rgba(100,200,100,0.8);">O&#8322;: --</div>
     <div id="hud-vent" style="color: rgba(100,150,255,0.8); display:none;">VENT LIMITED</div>
   </div>
 

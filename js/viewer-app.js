@@ -4,7 +4,7 @@
  * sends water spray data back to affect the simulation.
  */
 
-import { GRID_COLS, GRID_ROWS, DRAG_THRESHOLD } from './constants.js';
+import { GRID_COLS, GRID_ROWS } from './constants.js';
 import { FireSimulation } from './simulation.js';
 import { SimNetwork } from './network.js';
 import room3d from './room3d/index.js';
@@ -72,116 +72,93 @@ net.onScenario = (data) => {
 // Enable first-person camera for the viewer
 enableFPCamera();
 
-// Water spray state
-const sprayState = {
-  mouse3dDown: false,
-  mouseX3d: 0,
-  mouseY3d: 0,
-  dragDistance3d: 0,
-};
+// ── Water spray input ────────────────────────────────────
+// Desktop: left-click = spray at cursor position
+// Mobile: spray button = spray at screen center (crosshair)
+let spraying = false;
+let sprayX = 0;  // screen coords for spray target
+let sprayY = 0;
 
-// Setup water spray input (left-click + drag on desktop, 1-finger on mobile)
 const room3dContainer = document.getElementById('room3d-container');
+const sprayBtn = document.getElementById('spray-btn');
+
 if (room3dContainer) {
   room3dContainer.addEventListener('contextmenu', e => e.preventDefault());
 
-  let mouseDownX = 0, mouseDownY = 0;
+  // Desktop: left-click to spray at cursor position
   room3dContainer.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
-    sprayState.mouse3dDown = true;
-    sprayState.mouseX3d = e.clientX;
-    sprayState.mouseY3d = e.clientY;
-    sprayState.dragDistance3d = 0;
-    mouseDownX = e.clientX;
-    mouseDownY = e.clientY;
+    spraying = true;
+    sprayX = e.clientX;
+    sprayY = e.clientY;
   });
-
   room3dContainer.addEventListener('mousemove', (e) => {
-    if (!sprayState.mouse3dDown) return;
-    sprayState.mouseX3d = e.clientX;
-    sprayState.mouseY3d = e.clientY;
-    const dx = e.clientX - mouseDownX;
-    const dy = e.clientY - mouseDownY;
-    sprayState.dragDistance3d = Math.sqrt(dx * dx + dy * dy);
+    if (!spraying) return;
+    sprayX = e.clientX;
+    sprayY = e.clientY;
   });
-
   room3dContainer.addEventListener('mouseup', (e) => {
     if (e.button !== 0) return;
-    sprayState.mouse3dDown = false;
-    sprayState.dragDistance3d = 0;
+    spraying = false;
     room3d.hideWaterSpray();
     clearSprayScreenPosition();
   });
-
   room3dContainer.addEventListener('mouseleave', () => {
-    sprayState.mouse3dDown = false;
-    sprayState.dragDistance3d = 0;
+    spraying = false;
     room3d.hideWaterSpray();
     clearSprayScreenPosition();
   });
+}
 
-  // 1-finger water spray (touch) — 2nd finger cancels spray (used for look)
-  room3dContainer.addEventListener('touchstart', (e) => {
-    if (e.touches.length === 1) {
-      sprayState.mouse3dDown = true;
-      sprayState.mouseX3d = e.touches[0].clientX;
-      sprayState.mouseY3d = e.touches[0].clientY;
-      sprayState.dragDistance3d = DRAG_THRESHOLD + 1;
-    }
-    if (e.touches.length >= 2) {
-      // Second finger added — stop spraying, let look-around take over
-      sprayState.mouse3dDown = false;
-      sprayState.dragDistance3d = 0;
-      room3d.hideWaterSpray();
-      clearSprayScreenPosition();
-    }
-  }, { passive: true });
-
-  room3dContainer.addEventListener('touchmove', (e) => {
-    if (sprayState.mouse3dDown && e.touches.length === 1) {
-      sprayState.mouseX3d = e.touches[0].clientX;
-      sprayState.mouseY3d = e.touches[0].clientY;
-      sprayState.dragDistance3d = DRAG_THRESHOLD + 1;
-    }
-    if (sprayState.mouse3dDown && e.touches.length >= 2) {
-      sprayState.mouse3dDown = false;
-      sprayState.dragDistance3d = 0;
-      room3d.hideWaterSpray();
-      clearSprayScreenPosition();
-    }
-  }, { passive: true });
-
-  room3dContainer.addEventListener('touchend', (e) => {
-    if (sprayState.mouse3dDown && e.touches.length === 0) {
-      sprayState.mouse3dDown = false;
-      sprayState.dragDistance3d = 0;
-      room3d.hideWaterSpray();
-      clearSprayScreenPosition();
-    }
-  }, { passive: true });
+// Mobile: spray button targets screen center (crosshair)
+if (sprayBtn) {
+  function startSpray(e) {
+    e.preventDefault();
+    spraying = true;
+    sprayBtn.classList.add('active');
+    // Target screen center
+    const rect = room3dContainer.getBoundingClientRect();
+    sprayX = rect.left + rect.width / 2;
+    sprayY = rect.top + rect.height / 2;
+  }
+  function stopSpray(e) {
+    e.preventDefault();
+    spraying = false;
+    sprayBtn.classList.remove('active');
+    room3d.hideWaterSpray();
+    clearSprayScreenPosition();
+  }
+  sprayBtn.addEventListener('mousedown', startSpray);
+  sprayBtn.addEventListener('mouseup', stopSpray);
+  sprayBtn.addEventListener('mouseleave', stopSpray);
+  sprayBtn.addEventListener('touchstart', startSpray, { passive: false });
+  sprayBtn.addEventListener('touchend', stopSpray, { passive: false });
+  sprayBtn.addEventListener('touchcancel', stopSpray, { passive: false });
 }
 
 // Render loop
 function loop() {
   if (room3d.available) {
-    // Send water spray to controller (server is the single source of truth
-    // for heat — we only send input, never manipulate heat locally)
-    if (sprayState.mouse3dDown && sprayState.dragDistance3d > DRAG_THRESHOLD) {
-      const hit = room3d.raycastCeiling(sprayState.mouseX3d, sprayState.mouseY3d);
+    // When spray button is held on mobile, keep targeting screen center
+    if (spraying && sprayBtn && sprayBtn.classList.contains('active')) {
+      const rect = room3dContainer.getBoundingClientRect();
+      sprayX = rect.left + rect.width / 2;
+      sprayY = rect.top + rect.height / 2;
+    }
+
+    // Send water spray to controller
+    if (spraying) {
+      const hit = room3d.raycastCeiling(sprayX, sprayY);
       if (hit) {
         const playerPos = room3d.getPlayerPosition();
         const sprayParams = sim.getSprayParams(hit.worldX, hit.worldZ, playerPos);
         if (sprayParams) {
           net.sendWater(hit.worldX, hit.worldZ, playerPos);
           room3d.showWaterSpray(hit.worldX, hit.worldZ, sprayParams);
-          // Feed mouse NDC to camera for edge-scroll
           const rect = room3dContainer.getBoundingClientRect();
-          const ndcX = ((sprayState.mouseX3d - rect.left) / rect.width) * 2 - 1;
-          const ndcY = -((sprayState.mouseY3d - rect.top) / rect.height) * 2 + 1;
+          const ndcX = ((sprayX - rect.left) / rect.width) * 2 - 1;
+          const ndcY = -((sprayY - rect.top) / rect.height) * 2 + 1;
           setSprayScreenPosition(ndcX, ndcY);
-        } else {
-          room3d.hideWaterSpray();
-          clearSprayScreenPosition();
         }
       }
     } else {

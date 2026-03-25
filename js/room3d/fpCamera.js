@@ -1,9 +1,8 @@
 /**
  * First-person camera controller.
  *
- * Arrow keys / on-screen D-pad: forward/back/strafe
- * Left-click+drag: look around (yaw + pitch)
- * Mobile 1-finger drag: look around
+ * Desktop: WASD/Arrow keys to move, right-click drag to look.
+ * Mobile: D-pad (bottom-left) to move, right-side touch-drag to look.
  * Camera always at eye level (5.5ft), anchored to ground.
  *
  * Must call enableFPCamera() to activate — starts disabled so the admin
@@ -29,16 +28,15 @@ const fpPosition = typeof THREE !== 'undefined'
 
 const keysPressed = new Set();
 
-// Left-click drag state for look
+// Right-click drag state for look (desktop)
 let lookDragging = false;
 let lookLastX = 0;
 let lookLastY = 0;
 
-// Mobile 1-finger look state
-let touchLookActive = false;
+// Touch look state — any single-finger touch on the right half of screen
+let touchLookId = -1;
 let touchLookLastX = 0;
 let touchLookLastY = 0;
-let touchLookId = -1;
 
 // Clock for deltaTime
 const fpClock = typeof THREE !== 'undefined' ? new THREE.Clock() : null;
@@ -50,25 +48,26 @@ let lastVentKeyForStart = '';
 // Whether FP camera is active (listeners attached)
 let fpEnabled = false;
 
-// Spray edge-scroll: when spraying near screen edges, gently rotate the view
+// Spray edge-scroll
 let sprayEdgeActive = false;
 let sprayEdgeNdcX = 0;
 let sprayEdgeNdcY = 0;
-const EDGE_DEAD_ZONE = 0.4;   // no rotation inside central 40%
-const EDGE_TURN_SPEED = 1.0;  // max rad/sec at screen edge
+const EDGE_DEAD_ZONE = 0.4;
+const EDGE_TURN_SPEED = 1.0;
 
-// ── Event handler functions (named so we can add/remove) ──
+// ── Event handler functions ──────────────────────────────
 
 function onKeyDown(e) {
-  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+  const key = e.key;
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd', 'W', 'A', 'S', 'D'].includes(key)) {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
     e.preventDefault();
-    keysPressed.add(e.key);
+    keysPressed.add(key.toLowerCase());
   }
 }
 
 function onKeyUp(e) {
-  keysPressed.delete(e.key);
+  keysPressed.delete(e.key.toLowerCase());
 }
 
 function onMouseDown(e) {
@@ -98,30 +97,45 @@ function onContextMenu(e) {
   e.preventDefault();
 }
 
+// Touch look: any finger on the right half of the screen (excluding spray button area)
+function isLookTouch(touch) {
+  return touch.clientX > window.innerWidth * 0.35;
+}
+
 function onTouchStart(e) {
-  if (e.touches.length === 2) {
-    touchLookActive = true;
-    touchLookLastX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-    touchLookLastY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    const t = e.changedTouches[i];
+    if (touchLookId === -1 && isLookTouch(t)) {
+      // Check it's not on the spray button or dpad
+      const el = document.elementFromPoint(t.clientX, t.clientY);
+      if (el && (el.id === 'spray-btn' || el.classList.contains('dpad-btn'))) continue;
+      touchLookId = t.identifier;
+      touchLookLastX = t.clientX;
+      touchLookLastY = t.clientY;
+    }
   }
 }
 
 function onTouchMove(e) {
-  if (!touchLookActive || e.touches.length < 2) return;
-  const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-  const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-  const dx = midX - touchLookLastX;
-  const dy = midY - touchLookLastY;
-  touchLookLastX = midX;
-  touchLookLastY = midY;
-  fpYaw += dx * LOOK_SENSITIVITY;
-  fpPitch += dy * LOOK_SENSITIVITY;
-  fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    const t = e.changedTouches[i];
+    if (t.identifier === touchLookId) {
+      const dx = t.clientX - touchLookLastX;
+      const dy = t.clientY - touchLookLastY;
+      touchLookLastX = t.clientX;
+      touchLookLastY = t.clientY;
+      fpYaw += dx * LOOK_SENSITIVITY;
+      fpPitch += dy * LOOK_SENSITIVITY;
+      fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
+    }
+  }
 }
 
 function onTouchEnd(e) {
-  if (e.touches.length < 2) {
-    touchLookActive = false;
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    if (e.changedTouches[i].identifier === touchLookId) {
+      touchLookId = -1;
+    }
   }
 }
 
@@ -246,10 +260,10 @@ export function updateCamera(sim) {
   const rightZ = -Math.sin(fpYaw);
 
   let moveX = 0, moveZ = 0;
-  if (keysPressed.has('ArrowUp'))    { moveX += forwardX; moveZ += forwardZ; }
-  if (keysPressed.has('ArrowDown'))  { moveX -= forwardX; moveZ -= forwardZ; }
-  if (keysPressed.has('ArrowLeft'))  { moveX -= rightX;   moveZ -= rightZ;   }
-  if (keysPressed.has('ArrowRight')) { moveX += rightX;   moveZ += rightZ;   }
+  if (keysPressed.has('arrowup') || keysPressed.has('w'))    { moveX += forwardX; moveZ += forwardZ; }
+  if (keysPressed.has('arrowdown') || keysPressed.has('s'))  { moveX -= forwardX; moveZ -= forwardZ; }
+  if (keysPressed.has('arrowleft') || keysPressed.has('a'))  { moveX -= rightX;   moveZ -= rightZ;   }
+  if (keysPressed.has('arrowright') || keysPressed.has('d')) { moveX += rightX;   moveZ += rightZ;   }
 
   const moveLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
   if (moveLen > 0) {
