@@ -718,7 +718,11 @@ export class FireSimulation {
           }
 
           // (b) Ceiling jet preheating (Alpert correlations with corner boost)
-          if (alpertHRR > 10 && fireWeight > 0) {
+          // Only contributes to DRY, unignited cells — wet/suppressed surfaces
+          // absorb the ceiling jet heat into evaporating water, not preheating
+          // toward ignition. This prevents suppressed cells from reigniting
+          // purely from the ceiling jet at distance.
+          if (alpertHRR > 10 && fireWeight > 0 && m < 0.1) {
             const dx = x - fireCX;
             const dy = y - fireCY;
             const rFt = Math.sqrt(dx * dx + dy * dy);
@@ -735,8 +739,10 @@ export class FireSimulation {
           }
 
           // (c) Gas layer radiation (global, spec §5.5.2)
-          if (gasTemp > 300) {
-            exposureRate += (gasTemp - 300) * 0.005;
+          // Only at high temps (>500°C per spec) for dry cells. Below 500°C,
+          // the gas layer doesn't produce enough radiant flux to reignite.
+          if (gasTemp > REIGNITION_TEMP && m < 0.3) {
+            exposureRate += (gasTemp - REIGNITION_TEMP) * 0.01;
           }
 
           // (d) Airflow directional bonus/penalty (spec §4.4)
