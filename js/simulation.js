@@ -655,7 +655,6 @@ export class FireSimulation {
     const gasTemp = this.gasLayerTemp;
 
     // ── 6. Per-cell update ───────────────────────────────────
-    const cellState = this.cellState;
 
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
