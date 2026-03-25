@@ -638,7 +638,7 @@ export class FireSimulation {
     }
 
     // Constants
-    const EVAP_RATE = 0.05;
+    const EVAP_RATE = 0.012;  // base rate: full saturation dries in ~80s (spec §5.5.1: 60-90s)
     const GROWTH_DAMPEN = 0.85;
     const IGNITION_THRESHOLD_KJ = 20; // kJ (spec: 15-25 kJ)
     const gasTemp = this.gasLayerTemp;
@@ -651,10 +651,19 @@ export class FireSimulation {
         let m = moisture[i];
         let exposure = heatExposure[i];
 
-        // Evaporate moisture (faster when gas layer is hot)
+        // Evaporate moisture — spec §5.5.1: saturated cell needs 60-90s of
+        // sustained radiant heat to dry out. At ambient temp, moisture persists
+        // much longer (wet ceiling stays wet without heat source nearby).
         if (m > 0) {
-          const evapMul = gasTemp > 200 ? 1 + (gasTemp - 200) / 400 : 1;
-          m = Math.max(0, m - EVAP_RATE * evapMul * dt);
+          // Base evaporation only when gas layer is warm or cell has hot neighbors
+          let evapRate = 0;
+          if (gasTemp > 100) {
+            // Hot gas layer drives evaporation: 0 at 100°C, full rate at 400°C+
+            evapRate = EVAP_RATE * Math.min(1, (gasTemp - 100) / 300);
+          }
+          // Ambient evaporation is very slow (wet ceiling stays wet for minutes)
+          evapRate = Math.max(evapRate, EVAP_RATE * 0.05); // ~0.0006/s → ~28 min from full
+          m = Math.max(0, m - evapRate * dt);
         }
 
         // Ceiling vent dissipation

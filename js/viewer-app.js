@@ -46,6 +46,9 @@ net.onHeatData = (heatArray) => {
     const gsNames = ['running', 'win', 'lose_flashover', 'lose_oxygen'];
     sim.gameState = gsNames[gsCode] || 'running';
   }
+  if (heatArray.length > heatLen + 3) {
+    sim.totalHRR = heatArray[heatLen + 3];
+  }
 };
 
 net.onParams = (params) => {
