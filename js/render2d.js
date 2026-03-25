@@ -205,12 +205,11 @@ export function render2D(sim, state) {
       for (let gx = 0; gx < sim.cols; gx += 2) {
         const af = sim.getAirflow(gx, gy);
         const mag = Math.sqrt(af.vx * af.vx + af.vy * af.vy);
-        const effectiveMag = mag * sim.ventStrength;
-        if (effectiveMag < 0.03) continue;
+        if (mag < 0.03) continue;
 
         const cx = offsetX + (gx + 1) * cellSize;
         const cy = offsetY + (gy + 1) * cellSize;
-        const len = cellSize * 0.6 * Math.min(effectiveMag, 1);
+        const len = cellSize * 0.6 * Math.min(mag, 1);
 
         const angle = Math.atan2(af.vy, af.vx);
         const ex = cx + Math.cos(angle) * len;
