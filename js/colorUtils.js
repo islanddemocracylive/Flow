@@ -37,25 +37,28 @@ export function cellToRGB(state, heat, exposureNorm, moisture) {
   return DARK;
 }
 
-/** Fire colors: dark red → bright orange → yellow → white. With flicker. */
+/** Fire colors: orange → bright orange → yellow → white. No red — fire starts orange. */
 function _fireRGB(t) {
   t = Math.min(t, 1);
   let r, g, b;
-  if (t < 0.33) {
-    const s = t / 0.33;
-    r = Math.round(30 + s * 170);
-    g = Math.round(s * 20);
+  if (t < 0.4) {
+    // Low intensity: orange (200,80,0) → bright orange (240,140,0)
+    const s = t / 0.4;
+    r = Math.round(200 + s * 40);
+    g = Math.round(80 + s * 60);
     b = 0;
-  } else if (t < 0.66) {
-    const s = (t - 0.33) / 0.33;
-    r = 200 + Math.round(s * 55);
-    g = 20 + Math.round(s * 140);
-    b = 0;
+  } else if (t < 0.75) {
+    // Mid intensity: bright orange → yellow (255,220,30)
+    const s = (t - 0.4) / 0.35;
+    r = 240 + Math.round(s * 15);
+    g = 140 + Math.round(s * 80);
+    b = Math.round(s * 30);
   } else {
-    const s = (t - 0.66) / 0.34;
+    // High intensity: yellow → white (255,255,200)
+    const s = (t - 0.75) / 0.25;
     r = 255;
-    g = 160 + Math.round(s * 95);
-    b = Math.round(s * 200);
+    g = 220 + Math.round(s * 35);
+    b = 30 + Math.round(s * 170);
   }
   const flicker = 0.9 + Math.random() * 0.1;
   r = Math.min(255, Math.round(r * flicker));
@@ -64,14 +67,25 @@ function _fireRGB(t) {
   return { r, g, b };
 }
 
-/** Preheating: dark → subtle amber/brown glow as exposure increases. */
+/** Preheating: dark → brown → dark red as exposure approaches ignition. */
 function _preheatRGB(t) {
   t = Math.min(t, 1);
-  // Subtle warm tint: dark → amber. Alpha-like blend with dark background.
-  const r = Math.round(20 + t * 80);   // 20 → 100
-  const g = Math.round(20 + t * 40);   // 20 → 60
-  const b = Math.round(28 - t * 18);   // 28 → 10
-  return { r, g, b };
+  if (t < 0.5) {
+    // Low exposure: dark → warm brown
+    const s = t / 0.5;
+    return {
+      r: Math.round(20 + s * 60),    // 20 → 80
+      g: Math.round(20 + s * 25),    // 20 → 45
+      b: Math.round(28 - s * 18),    // 28 → 10
+    };
+  }
+  // High exposure: warm brown → dark red (approaching ignition)
+  const s = (t - 0.5) / 0.5;
+  return {
+    r: Math.round(80 + s * 80),     // 80 → 160
+    g: Math.round(45 - s * 20),     // 45 → 25
+    b: Math.round(10 - s * 5),      // 10 → 5
+  };
 }
 
 /** Suppressed: blue-gray tint, brighter when wetter. */
@@ -137,11 +151,15 @@ export function cellToColor(state, heat, exposureNorm, moisture) {
   }
   if (state === CELL_PREHEATING && exposureNorm > 0) {
     const t = Math.min(exposureNorm, 1);
-    _tempColor.setRGB(
-      0.08 + t * 0.31,  // 0.08 → 0.39
-      0.08 + t * 0.16,  // 0.08 → 0.24
-      0.11 - t * 0.07   // 0.11 → 0.04
-    );
+    if (t < 0.5) {
+      // Dark → warm brown
+      const s = t / 0.5;
+      _tempColor.setRGB(0.08 + s * 0.24, 0.08 + s * 0.10, 0.11 - s * 0.07);
+    } else {
+      // Warm brown → dark red
+      const s = (t - 0.5) / 0.5;
+      _tempColor.setRGB(0.32 + s * 0.31, 0.18 - s * 0.08, 0.04 - s * 0.02);
+    }
     return _tempColor;
   }
   if (state === CELL_SUPPRESSED) {
@@ -157,19 +175,22 @@ export function cellToColor(state, heat, exposureNorm, moisture) {
   return _tempColor;
 }
 
-/** Fire colors for 3D — same gradient as 2D but in [0-1] range. With flicker. */
+/** Fire colors for 3D — orange → yellow → white. Matches 2D gradient. */
 function _fireColor3D(heat) {
   const t = Math.min(heat, 1);
   let r, g, b;
-  if (t < 0.33) {
-    const s = t / 0.33;
-    r = s * 0.78; g = s * 0.08; b = 0;
-  } else if (t < 0.66) {
-    const s = (t - 0.33) / 0.33;
-    r = 0.78 + s * 0.22; g = 0.08 + s * 0.55; b = 0;
+  if (t < 0.4) {
+    // Orange → bright orange
+    const s = t / 0.4;
+    r = 0.78 + s * 0.16; g = 0.31 + s * 0.24; b = 0;
+  } else if (t < 0.75) {
+    // Bright orange → yellow
+    const s = (t - 0.4) / 0.35;
+    r = 0.94 + s * 0.06; g = 0.55 + s * 0.31; b = s * 0.12;
   } else {
-    const s = (t - 0.66) / 0.34;
-    r = 1; g = 0.63 + s * 0.37; b = s * 0.78;
+    // Yellow → white
+    const s = (t - 0.75) / 0.25;
+    r = 1; g = 0.86 + s * 0.14; b = 0.12 + s * 0.66;
   }
   const flicker = 0.92 + Math.random() * 0.08;
   _tempColor.setRGB(

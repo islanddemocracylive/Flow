@@ -21,10 +21,12 @@ export function raycastCeiling(clientX, clientY) {
   raycaster.setFromCamera(ndcMouse, camera);
 
   const hit = raycaster.ray.intersectPlane(ceilingPlane, rayHitPoint);
-  if (hit && hit.x >= 0 && hit.x <= ROOM_W && hit.z >= 0 && hit.z <= ROOM_D) {
-    return { worldX: hit.x, worldZ: hit.z };
-  }
-  return null;
+  if (!hit) return null;
+  // Clamp to room bounds — if cursor is over a wall, spray hits the nearest
+  // ceiling edge rather than stopping. The simulation handles out-of-grid cells.
+  const worldX = Math.max(0, Math.min(ROOM_W, hit.x));
+  const worldZ = Math.max(0, Math.min(ROOM_D, hit.z));
+  return { worldX, worldZ };
 }
 
 // Water spray visual indicator – elliptical shape built in XZ plane (ceiling).
