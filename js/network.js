@@ -49,12 +49,18 @@ export class SimNetwork {
     };
   }
 
-  sendHeat(float32Array, gasLayerTemp) {
+  sendHeat(float32Array, simState) {
     if (this.connected && this.ws.readyState === WebSocket.OPEN) {
-      // Append gasLayerTemp as an extra float after the heat array
-      const combined = new Float32Array(float32Array.length + 1);
+      // Append metadata floats after the heat array: [gasLayerTemp, oxygenLevel, gameStateCode]
+      const extra = 3;
+      const combined = new Float32Array(float32Array.length + extra);
       combined.set(float32Array);
-      combined[float32Array.length] = gasLayerTemp || 0;
+      const base = float32Array.length;
+      combined[base] = (simState && simState.gasLayerTemp) || 0;
+      combined[base + 1] = (simState && simState.oxygenLevel) || 20.9;
+      // Encode gameState as number: 0=idle/running, 1=win, 2=lose_flashover, 3=lose_oxygen
+      const gsMap = { idle: 0, running: 0, win: 1, lose_flashover: 2, lose_oxygen: 3 };
+      combined[base + 2] = (simState && gsMap[simState.gameState]) || 0;
       this.ws.send(combined.buffer);
     }
   }

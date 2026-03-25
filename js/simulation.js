@@ -20,6 +20,8 @@
 import {
   GAS_LAYER_MASS, GAS_CP, FLASHOVER_TEMP, REIGNITION_TEMP,
   AMBIENT_TEMP, CELL_HRR_MAX,
+  ROOM_AIR_MASS, AMBIENT_O2, O2_FLAMING_LIMIT, O2_LETHAL_LIMIT, O2_PER_MJ,
+  DOOR_AREA_M2, DOOR_HEIGHT_M, VENT_AREA_M2,
 } from './constants.js';
 
 export class FireSimulation {
@@ -61,6 +63,33 @@ export class FireSimulation {
     this.flashedOver = false;      // true once flashover triggers
     this.flashoverTimer = 0;       // seconds gas layer > FLASHOVER_TEMP
     this.growthAlpha = 0.047;      // t² fire growth coefficient (default: fast)
+
+    // Oxygen model
+    this.oxygenLevel = AMBIENT_O2; // current O₂ % in the room
+    this.ventLimited = false;      // true when O₂ < flaming limit
+
+    // Win/lose
+    this.gameState = 'idle';       // 'idle' | 'running' | 'win' | 'lose_flashover' | 'lose_oxygen'
+    this.winTimer = 0;             // seconds with 0 burning cells (must sustain for win)
+
+    // Pre-computed edge multiplier for wall-junction spread bonus
+    this._edgeMul = new Float32Array(cols * rows);
+    this._computeEdgeMultipliers();
+  }
+
+  /** Pre-compute spread multiplier: 2.0× at corners, 1.5× at wall edges, 1.0× interior. */
+  _computeEdgeMultipliers() {
+    const { cols, rows } = this;
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const atLeft = x === 0;
+        const atRight = x === cols - 1;
+        const atTop = y === 0;
+        const atBottom = y === rows - 1;
+        const edgeCount = (atLeft ? 1 : 0) + (atRight ? 1 : 0) + (atTop ? 1 : 0) + (atBottom ? 1 : 0);
+        this._edgeMul[y * cols + x] = edgeCount >= 2 ? 2.0 : edgeCount === 1 ? 1.5 : 1.0;
+      }
+    }
   }
 
   idx(x, y) {
@@ -76,6 +105,10 @@ export class FireSimulation {
     this.gasLayerTemp = AMBIENT_TEMP;
     this.flashedOver = false;
     this.flashoverTimer = 0;
+    this.oxygenLevel = AMBIENT_O2;
+    this.ventLimited = false;
+    this.gameState = 'idle';
+    this.winTimer = 0;
   }
 
   resize(cols, rows) {
@@ -87,6 +120,8 @@ export class FireSimulation {
     this.obstacles = new Uint8Array(cols * rows);
     this.moisture = new Float32Array(cols * rows);
     this.startLocations = new Set();
+    this._edgeMul = new Float32Array(cols * rows);
+    this._computeEdgeMultipliers();
   }
 
   ignite(cx, cy, radius = 2) {
@@ -490,17 +525,67 @@ export class FireSimulation {
   step(dt) {
     const { cols, rows, heat, nextHeat, moisture, spreadSpeed, ignitionThreshold, airflow, ventStrength } = this;
     const hasAirflow = this.vents.length > 0;
+    const edgeMul = this._edgeMul;
+
+    // Don't tick if game is over
+    if (this.gameState === 'win' || this.gameState === 'lose_flashover' || this.gameState === 'lose_oxygen') return;
+    if (this.gameState === 'idle') this.gameState = 'running';
 
     // Track simulation time
     this.simTime += dt;
 
-    // Compute total HRR from all burning cells
+    // ── 1. Compute total HRR from all burning cells ─────────
     let totalHRR = 0;
     const totalCells = cols * rows;
     for (let i = 0; i < totalCells; i++) {
       if (heat[i] > 0) totalHRR += heat[i] * CELL_HRR_MAX;
     }
-    this.totalHRR = totalHRR;
+
+    // ── 2. Ventilation-limited HRR cap ──────────────────────
+    // Max HRR the ventilation can sustain: Q_max = 1518 · Av · √Hv (kW)
+    const ceilingVents = this.vents.filter(v => v.type === 'ceiling');
+    const doors = this.vents.filter(v => v.type === 'door');
+    const totalVentArea = doors.length * DOOR_AREA_M2 + ceilingVents.length * VENT_AREA_M2;
+    const avgVentHeight = doors.length > 0 ? DOOR_HEIGHT_M : (ceilingVents.length > 0 ? 0.5 : 0);
+    const ventMaxHRR = totalVentArea > 0 ? 1518 * totalVentArea * Math.sqrt(avgVentHeight) : 0;
+
+    // If no ventilation at all, cap is based on remaining O₂
+    const o2Fraction = Math.max(0, (this.oxygenLevel - O2_FLAMING_LIMIT) / (AMBIENT_O2 - O2_FLAMING_LIMIT));
+    this.ventLimited = this.oxygenLevel < O2_FLAMING_LIMIT;
+
+    // Effective HRR: limited by ventilation or O₂ depletion
+    let effectiveHRR = totalHRR;
+    if (this.ventLimited) {
+      effectiveHRR = 0; // flaming ceases below 15% O₂
+    } else if (ventMaxHRR > 0 && totalHRR > ventMaxHRR) {
+      effectiveHRR = ventMaxHRR; // can't burn more than ventilation supports
+    }
+    // Scale factor to dampen individual cell burning when vent-limited
+    const hrrScale = totalHRR > 0 ? effectiveHRR / totalHRR : 1;
+    this.totalHRR = effectiveHRR;
+
+    // ── 3. O₂ update ────────────────────────────────────────
+    // Consumption: O2_PER_MJ kg O₂ per kJ, effectiveHRR is in kW
+    const o2ConsumedKg = effectiveHRR * dt * O2_PER_MJ / 1000; // kW·s = kJ, /1000 → MJ
+    // Actually: effectiveHRR (kW) * dt (s) = kJ. O2_PER_MJ is kg/MJ. So:
+    // o2ConsumedKg = (effectiveHRR * dt / 1000) * O2_PER_MJ
+    const o2ChangePercent = (o2ConsumedKg / (ROOM_AIR_MASS * AMBIENT_O2 / 100)) * 100;
+    this.oxygenLevel -= o2ChangePercent;
+
+    // O₂ replenishment from open vents/doors
+    // Air inflow: m_air = 0.5 · A_v · √H_v per opening (kg/s)
+    let airInflowKgPerSec = 0;
+    for (const d of doors) {
+      airInflowKgPerSec += 0.5 * DOOR_AREA_M2 * Math.sqrt(DOOR_HEIGHT_M);
+    }
+    for (const v of ceilingVents) {
+      airInflowKgPerSec += 0.5 * VENT_AREA_M2 * Math.sqrt(0.5); // ceiling vents are smaller
+    }
+    // Fresh air at 20.9% O₂ mixes into the room
+    const freshO2Kg = airInflowKgPerSec * dt * (AMBIENT_O2 / 100);
+    const o2ReplenishPercent = (freshO2Kg / ROOM_AIR_MASS) * 100;
+    this.oxygenLevel = Math.min(AMBIENT_O2, this.oxygenLevel + o2ReplenishPercent);
+    this.oxygenLevel = Math.max(0, this.oxygenLevel);
 
     // Moisture constants
     const EVAP_RATE = 0.05;       // dries from full saturation in ~20s
@@ -510,34 +595,39 @@ export class FireSimulation {
     // Gas layer temperature for reignition checks inside the loop
     const gasTemp = this.gasLayerTemp;
 
+    // ── 4. Per-cell update ───────────────────────────────────
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const i = this.idx(x, y);
         let h = heat[i];
         let m = moisture[i];
 
-        // Evaporate moisture
+        // Evaporate moisture (faster when gas layer is hot)
         if (m > 0) {
-          m = m - EVAP_RATE * dt;
+          const evapMul = gasTemp > 200 ? 1 + (gasTemp - 200) / 400 : 1;
+          m = m - EVAP_RATE * evapMul * dt;
           if (m < 0) m = 0;
         }
-
-        // Moisture dampening factor: 1.0 (dry) → near 0 (fully saturated)
-        const mDampen = 1.0 - m;
 
         if (h > 0 && this.isCeilingVent(x, y)) {
           h = Math.max(0, h - 0.8 * ventStrength * dt);
         }
 
         if (h > 0) {
-          // Self-intensification dampened by moisture (wet material burns slower)
-          h = Math.min(1.0, h + 0.3 * dt * (1.0 - h) * (1.0 - m * GROWTH_DAMPEN));
+          if (this.ventLimited) {
+            // No flaming combustion — fire smoulders, heat decays slowly
+            h = Math.max(0, h - 0.02 * dt);
+          } else {
+            // Self-intensification dampened by moisture and ventilation
+            const growthRate = 0.3 * hrrScale;
+            h = Math.min(1.0, h + growthRate * dt * (1.0 - h) * (1.0 - m * GROWTH_DAMPEN));
 
-          if (hasAirflow) {
-            const ai = (y * cols + x) * 2;
-            const mag = Math.sqrt(airflow[ai] * airflow[ai] + airflow[ai + 1] * airflow[ai + 1]);
-            if (mag > 0.05) {
-              h = Math.min(1.0, h + mag * ventStrength * 0.15 * dt * (1.0 - m * GROWTH_DAMPEN));
+            if (hasAirflow) {
+              const ai = (y * cols + x) * 2;
+              const mag = Math.sqrt(airflow[ai] * airflow[ai] + airflow[ai + 1] * airflow[ai + 1]);
+              if (mag > 0.05) {
+                h = Math.min(1.0, h + mag * ventStrength * 0.15 * hrrScale * dt * (1.0 - m * GROWTH_DAMPEN));
+              }
             }
           }
 
@@ -563,10 +653,11 @@ export class FireSimulation {
         if (count > 0) {
           const avgNeighbor = neighborHeat / count;
 
-          if (h <= 0 && avgNeighbor > ignitionThreshold) {
+          if (h <= 0 && avgNeighbor > ignitionThreshold && !this.ventLimited) {
             // Moisture strongly resists re-ignition (wet ceiling won't catch)
+            // Wall-edge multiplier: fire spreads 1.5-2× faster at wall-ceiling junctions
             let ignitionChance = spreadSpeed * dt * (avgNeighbor - ignitionThreshold) * (count / 8)
-              * (1.0 - m * IGNITION_DAMPEN);
+              * (1.0 - m * IGNITION_DAMPEN) * edgeMul[i];
 
             if (hasAirflow) {
               const ai = (y * cols + x) * 2;
@@ -575,25 +666,37 @@ export class FireSimulation {
 
               if (Math.abs(avx) + Math.abs(avy) > 0.01) {
                 let windBonus = 0;
+                let windPenalty = 0;
                 let windCount = 0;
+                let opposedCount = 0;
                 for (let ny2 = y - 1; ny2 <= y + 1; ny2++) {
                   for (let nx2 = x - 1; nx2 <= x + 1; nx2++) {
                     if (nx2 === x && ny2 === y) continue;
                     if (nx2 < 0 || nx2 >= cols || ny2 < 0 || ny2 >= rows) continue;
                     if (heat[this.idx(nx2, ny2)] <= 0) continue;
 
+                    // Direction from burning neighbor toward this cell
                     const dx = x - nx2;
                     const dy = y - ny2;
                     const dMag = Math.sqrt(dx * dx + dy * dy);
                     const dot = (dx / dMag) * avx + (dy / dMag) * avy;
                     if (dot > 0) {
+                      // Concurrent: fire spreading WITH airflow (2-5× faster)
                       windBonus += dot;
                       windCount++;
+                    } else if (dot < -0.3) {
+                      // Opposed: fire spreading AGAINST airflow (0.3-0.5× slower)
+                      windPenalty += Math.abs(dot);
+                      opposedCount++;
                     }
                   }
                 }
                 if (windCount > 0) {
                   ignitionChance *= (1.0 + ventStrength * (windBonus / windCount) * 2.0);
+                }
+                if (opposedCount > 0 && windCount === 0) {
+                  // Purely opposed spread: significantly slower
+                  ignitionChance *= Math.max(0.2, 1.0 - ventStrength * (windPenalty / opposedCount) * 0.7);
                 }
               }
             }
@@ -601,7 +704,7 @@ export class FireSimulation {
             if (Math.random() < ignitionChance) {
               h = 0.05 + Math.random() * 0.1;
             }
-          } else if (h > 0) {
+          } else if (h > 0 && !this.ventLimited) {
             // Neighbor diffusion also dampened by moisture
             const diff = avgNeighbor - h;
             if (diff > 0) {
@@ -612,7 +715,7 @@ export class FireSimulation {
 
         // Gas layer reignition: hot overhead gas reignites unsaturated cells
         // (independent of neighbor heat — the radiant flux from the gas layer is global)
-        if (h <= 0 && gasTemp > REIGNITION_TEMP && m < 0.3) {
+        if (h <= 0 && gasTemp > REIGNITION_TEMP && m < 0.3 && !this.ventLimited) {
           const reignitionChance = dt * (gasTemp - REIGNITION_TEMP) / 200;
           if (Math.random() < reignitionChance) {
             h = 0.05 + Math.random() * 0.1;
@@ -628,8 +731,11 @@ export class FireSimulation {
     this.heat = this.nextHeat;
     this.nextHeat = tmp;
 
-    // ── Gas layer temperature update ──────────────────────────
-    this._updateGasLayer(dt, totalHRR);
+    // ── 5. Gas layer temperature update ─────────────────────
+    this._updateGasLayer(dt, effectiveHRR);
+
+    // ── 6. Win/lose conditions ───────────────────────────────
+    this._checkWinLose(dt);
   }
 
   /** Update upper gas layer temperature based on fire output and ventilation. */
@@ -639,14 +745,14 @@ export class FireSimulation {
     // Heat input from fire (HRR heats the gas layer)
     temp += (totalHRR * dt) / (GAS_LAYER_MASS * GAS_CP);
 
-    // Vent/door cooling: hot gas escapes through ceiling vents, fresh air from doors
-    const ceilingVents = this.vents.filter(v => v.type === 'ceiling');
-    const doors = this.vents.filter(v => v.type === 'door');
-    const ventCool = ceilingVents.length * 2.0 + doors.length * 1.0; // °C/s base rate
-    temp -= ventCool * this.ventStrength * dt;
+    // Vent/door cooling: proportional to temp difference (hotter gas escapes faster)
+    const nCeilingVents = this.vents.filter(v => v.type === 'ceiling').length;
+    const nDoors = this.vents.filter(v => v.type === 'door').length;
+    const ventCoolCoeff = nCeilingVents * 0.008 + nDoors * 0.004; // per °C above ambient per second
+    temp -= ventCoolCoeff * this.ventStrength * (temp - AMBIENT_TEMP) * dt;
 
     // Ambient radiation/convection loss (slow passive cooling toward ambient)
-    temp -= 0.5 * dt * (temp - AMBIENT_TEMP) / 300;
+    temp -= 0.002 * (temp - AMBIENT_TEMP) * dt;
 
     // Clamp
     temp = Math.max(AMBIENT_TEMP, Math.min(1200, temp));
@@ -671,6 +777,39 @@ export class FireSimulation {
       if (this.heat[i] < 0.5) {
         this.heat[i] = 0.5 + Math.random() * 0.3;
       }
+    }
+  }
+
+  /** Check win/lose conditions each tick. */
+  _checkWinLose(dt) {
+    if (this.gameState !== 'running') return;
+
+    // Lose: flashover
+    if (this.flashedOver) {
+      this.gameState = 'lose_flashover';
+      return;
+    }
+
+    // Lose: oxygen depleted (IDLH atmosphere)
+    if (this.oxygenLevel < O2_LETHAL_LIMIT) {
+      this.gameState = 'lose_oxygen';
+      return;
+    }
+
+    // Win: no burning cells for 3 sustained seconds
+    let burning = 0;
+    const total = this.cols * this.rows;
+    for (let i = 0; i < total; i++) {
+      if (this.heat[i] > 0) { burning++; break; }
+    }
+    if (burning === 0 && this.simTime > 5) {
+      // Need some time to have passed (don't win instantly)
+      this.winTimer += dt;
+      if (this.winTimer >= 3) {
+        this.gameState = 'win';
+      }
+    } else {
+      this.winTimer = 0;
     }
   }
 

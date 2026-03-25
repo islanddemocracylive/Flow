@@ -28,15 +28,23 @@ const statusEl = document.getElementById('status');
 const net = new SimNetwork('viewer');
 
 net.onHeatData = (heatArray) => {
-  // The last float is gasLayerTemp, the rest are heat values
+  // Heat values followed by metadata: [gasLayerTemp, oxygenLevel, gameStateCode]
   const heatLen = sim.cols * sim.rows;
   for (let i = 0; i < heatLen; i++) {
     const v = heatArray[i];
     sim.heat[i] = v > 0 ? (v < 1 ? v : 1) : 0; // also handles NaN → 0
   }
-  // Extract gas layer temperature (appended after heat data)
+  // Extract metadata (appended after heat data)
   if (heatArray.length > heatLen) {
     sim.gasLayerTemp = heatArray[heatLen];
+  }
+  if (heatArray.length > heatLen + 1) {
+    sim.oxygenLevel = heatArray[heatLen + 1];
+  }
+  if (heatArray.length > heatLen + 2) {
+    const gsCode = heatArray[heatLen + 2];
+    const gsNames = ['running', 'win', 'lose_flashover', 'lose_oxygen'];
+    sim.gameState = gsNames[gsCode] || 'running';
   }
 };
 

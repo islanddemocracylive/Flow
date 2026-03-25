@@ -163,6 +163,37 @@ export function render2D(sim, state) {
     const hrr = sim.totalHRR / 1000;
     ctx.fillStyle = 'rgba(255,180,80,0.7)';
     ctx.fillText(`HRR: ${hrr.toFixed(1)} MW`, hudX, hudY + 16);
+
+    // O₂ level
+    const o2 = sim.oxygenLevel;
+    const o2Color = o2 > 18 ? 'rgba(100,200,100,0.7)'
+      : o2 > 15 ? 'rgba(255,200,80,0.9)'
+      : 'rgba(255,80,60,0.9)';
+    ctx.fillStyle = o2Color;
+    ctx.fillText(`O\u2082: ${o2.toFixed(1)}%`, hudX, hudY + 32);
+
+    // Vent-limited indicator
+    if (sim.ventLimited) {
+      ctx.fillStyle = 'rgba(100,150,255,0.8)';
+      ctx.fillText('VENT LIMITED', hudX, hudY + 48);
+    }
+  }
+
+  // Win/lose overlay
+  if (sim.gameState === 'win' || sim.gameState === 'lose_flashover' || sim.gameState === 'lose_oxygen') {
+    const overlays = {
+      win: { text: 'FIRE SUPPRESSED', color: 'rgba(40,180,60,0.85)', bg: 'rgba(0,40,0,0.4)' },
+      lose_flashover: { text: 'FLASHOVER', color: 'rgba(255,80,20,0.95)', bg: 'rgba(60,10,0,0.5)' },
+      lose_oxygen: { text: 'OXYGEN DEPLETED', color: 'rgba(100,160,255,0.95)', bg: 'rgba(0,10,40,0.5)' },
+    };
+    const o = overlays[sim.gameState];
+    ctx.fillStyle = o.bg;
+    ctx.fillRect(offsetX, offsetY, gridW, gridH);
+    ctx.font = `bold ${Math.max(20, gridW * 0.06)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = o.color;
+    ctx.fillText(o.text, offsetX + gridW / 2, offsetY + gridH / 2);
   }
 
   // Airflow arrows
