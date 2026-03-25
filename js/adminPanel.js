@@ -89,7 +89,7 @@ export function setupAdminPanel(sim, state, net) {
           sim.loadScenarioData(data);
           syncSliders(sim);
           state.playing = false;
-          updatePlayStopButtons();
+          updatePlayButton();
         }
       }
     });
