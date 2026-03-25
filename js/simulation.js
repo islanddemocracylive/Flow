@@ -718,10 +718,10 @@ export class FireSimulation {
           }
 
           // (b) Ceiling jet preheating (Alpert correlations with corner boost)
-          // Only contributes to DRY, unignited cells — wet/suppressed surfaces
-          // absorb the ceiling jet heat into evaporating water, not preheating
-          // toward ignition. This prevents suppressed cells from reigniting
-          // purely from the ceiling jet at distance.
+          // Only contributes when: cell is dry (m < 0.1), AND ceiling jet ΔT
+          // is high enough to meaningfully preheat toward ignition (300-400°C).
+          // A 97°C jet at 18ft can't ignite anything — only jets above ~150°C
+          // start driving surfaces toward ignition temperature.
           if (alpertHRR > 10 && fireWeight > 0 && m < 0.1) {
             const dx = x - fireCX;
             const dy = y - fireCY;
@@ -734,8 +734,11 @@ export class FireSimulation {
             } else {
               ceilingJetDT = 5.38 * Math.pow(alpertHRR / rM, 2/3) / ROOM_H_M;
             }
-            // Convert ceiling jet ΔT to heat flux (kW/cell)
-            exposureRate += ceilingJetDT * 0.01;
+            // Only contribute when jet is hot enough to drive toward ignition.
+            // Below 150°C ΔT, the surface barely warms — no meaningful preheating.
+            if (ceilingJetDT > 150) {
+              exposureRate += (ceilingJetDT - 150) * 0.01;
+            }
           }
 
           // (c) Gas layer radiation (global, spec §5.5.2)
