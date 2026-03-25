@@ -2,30 +2,69 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fire Simulation – 3D Viewer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Flow State – Simulator</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #0a0a14; overflow: hidden; height: 100vh; }
-    #room3d-container { width: 100vw; height: 100vh; }
-    #room3d-container canvas { display: block; width: 100% !important; height: 100% !important; }
+    body { background: #0a0a14; overflow: hidden; height: 100vh; height: 100dvh; }
+    #room3d-container { width: 100vw; height: 100vh; height: 100dvh; position: relative; display: flex; align-items: center; justify-content: center; }
+    #room3d-container canvas { display: block; }
     #status {
       position: fixed; top: 12px; right: 16px;
       color: #666; font: 12px/1 monospace;
       z-index: 10; user-select: none;
     }
     #status.connected { color: #4a4; }
+
+    /* D-pad */
+    .dpad {
+      position: absolute;
+      bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+      right: calc(20px + env(safe-area-inset-right, 0px));
+      width: 120px;
+      height: 120px;
+      z-index: 50;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .dpad-btn {
+      position: absolute;
+      width: 38px;
+      height: 38px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 14px;
+      cursor: pointer;
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .dpad-btn:hover { background: rgba(255, 255, 255, 0.2); }
+    .dpad-btn:active { background: rgba(255, 107, 53, 0.5); border-color: rgba(255, 107, 53, 0.6); }
+    .dpad-up    { top: 0;   left: 50%; transform: translateX(-50%); }
+    .dpad-down  { bottom: 0; left: 50%; transform: translateX(-50%); }
+    .dpad-left  { top: 50%; left: 0;   transform: translateY(-50%); }
+    .dpad-right { top: 50%; right: 0;  transform: translateY(-50%); }
   </style>
 </head>
 <body>
-  <div id="room3d-container"></div>
+  <div id="room3d-container">
+    <div id="dpad" class="dpad">
+      <button id="dpad-up" class="dpad-btn dpad-up" aria-label="Move forward">&#9650;</button>
+      <button id="dpad-left" class="dpad-btn dpad-left" aria-label="Strafe left">&#9664;</button>
+      <button id="dpad-down" class="dpad-btn dpad-down" aria-label="Move backward">&#9660;</button>
+      <button id="dpad-right" class="dpad-btn dpad-right" aria-label="Strafe right">&#9654;</button>
+    </div>
+  </div>
   <div id="status">Connecting...</div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-  <script src="simulation.js"></script>
-  <script src="room3d.js"></script>
-  <script src="network.js"></script>
-  <script src="viewer-app.js"></script>
+  <script type="module" src="js/viewer-app.js"></script>
 </body>
 </html>

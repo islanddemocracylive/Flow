@@ -65,6 +65,15 @@ wss.on('connection', (ws) => {
         }
       }
     }
+
+    // Viewer messages → relay to all controllers (e.g. water spray)
+    if (role === 'viewer' && !isBinary) {
+      for (const ctrl of controllers) {
+        if (ctrl.readyState === 1) {
+          ctrl.send(data, { binary: false });
+        }
+      }
+    }
   });
 
   ws.on('close', () => {
@@ -79,5 +88,5 @@ wss.on('connection', (ws) => {
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`  Controller: http://localhost:${PORT}/`);
-  console.log(`  Viewer:     http://localhost:${PORT}/viewer.html`);
+  console.log(`  Simulator:  http://localhost:${PORT}/viewer.html`);
 });
