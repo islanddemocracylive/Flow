@@ -440,7 +440,11 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
   if (sprayCone && sprayConePositions) {
     const CONE_MAX_LEN = 3.0; // ft — only show first 3 ft of cone
     const coneLen = Math.min(bLen, CONE_MAX_LEN);
-    const coneAngle = Math.atan2(discRadius, bLen); // full cone angle
+
+    // Quadratic spread model matching simulation: r = nozzleR + spreadK * d²
+    // Use same spreadK as getSprayParams (baseSpreadK=0.014 at 100 PSI, waterRadius=2)
+    const SPREAD_K = 0.014; // TODO: pass from params if waterRadius/PSI change
+    const _coneR = (d) => NOZZLE_RADIUS + SPREAD_K * d * d;
 
     // Unit basis vectors perpendicular to beam
     const u1x = ux / discRadius, u1y = uy / discRadius, u1z = uz / discRadius;
@@ -451,7 +455,7 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
     for (let r = 1; r <= CONE_RINGS; r++) {
       const frac = r / CONE_RINGS;
       const dist = coneLen * frac;
-      const ringR = NOZZLE_RADIUS + (dist * Math.tan(coneAngle) - NOZZLE_RADIUS) * frac;
+      const ringR = _coneR(dist);
       const rcx = nx + bx * dist, rcy = ny + by * dist, rcz = nz + bz * dist;
       for (let s = 0; s < CONE_SEGMENTS; s++) {
         const a1 = (s / CONE_SEGMENTS) * Math.PI * 2;
@@ -465,7 +469,7 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
       }
     }
     // Longitudinal lines from nozzle opening to end of short cone
-    const endR = NOZZLE_RADIUS + (coneLen * Math.tan(coneAngle) - NOZZLE_RADIUS);
+    const endR = _coneR(coneLen);
     const ex = nx + bx * coneLen, ey = ny + by * coneLen, ez = nz + bz * coneLen;
     for (let s = 0; s < CONE_SEGMENTS; s++) {
       const a = (s / CONE_SEGMENTS) * Math.PI * 2;

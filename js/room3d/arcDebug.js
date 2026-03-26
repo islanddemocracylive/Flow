@@ -193,9 +193,11 @@ export function updateArcDebug(playerPos, hit, sprayPSI) {
 
   // Cone radius at impact distance
   const totalDist = Math.sqrt(R * R + H * H);
-  const halfAngleDeg = 8 * 2 / 2 * Math.sqrt(100 / sprayPSI); // waterRadius=2 default
-  const halfAngleRad = halfAngleDeg * Math.PI / 180;
-  const coneRadius = totalDist * Math.tan(halfAngleRad);
+  // Quadratic spread model matching simulation
+  const NOZZLE_R = 0.073;
+  const baseSpreadK = 0.014;
+  const spreadK = baseSpreadK * Math.sqrt(100 / sprayPSI); // waterRadius=2 default
+  const coneRadius = NOZZLE_R + spreadK * totalDist * totalDist;
 
   // Effective fraction: perpendicularity × gravity dropout
   const perpFraction = Math.cos(impactAngle);

@@ -251,17 +251,24 @@ export class FireSimulation {
     const maxReach = this.sprayPSI * 0.2;
     if (totalDist > maxReach) return null;
 
-    // Cone half-angle (radians): ~8° at 100 PSI with waterRadius=2 (narrow fog).
-    // Higher PSI = tighter cone. waterRadius slider scales the angle.
-    const baseDeg = 8;
-    const halfAngleDeg = baseDeg * (this.waterRadius / 2) * Math.sqrt(100 / this.sprayPSI);
-    const halfAngleRad = halfAngleDeg * Math.PI / 180;
+    // Spray spread model: real nozzle stream stays coherent near the exit
+    // then disperses quadratically with distance. Fitted to observed data:
+    //   0 ft: 1.75" (nozzle opening)
+    //   4 ft: ~4" radius
+    //   5 ft: ~6" radius
+    //  10 ft: ~1.4 ft radius
+    // Model: radius = nozzleR + spreadK * distance²
+    // spreadK scales with waterRadius (wider pattern) and inversely with PSI.
+    const NOZZLE_R = 0.073;  // ft — 1.75" diameter / 2
+    const baseSpreadK = 0.014; // ft/ft² at 100 PSI, waterRadius=2
+    const spreadK = baseSpreadK * (this.waterRadius / 2) * Math.sqrt(100 / this.sprayPSI);
+    const coneRadius = NOZZLE_R + spreadK * totalDist * totalDist;
+
+    // Equivalent half-angle for the cone-surface intersection math
+    const halfAngleRad = Math.atan2(coneRadius, totalDist);
 
     // Incidence angle: 0 = perpendicular to surface, π/2 = parallel
     const incidenceAngle = Math.atan2(surfaceDist, perpDist);
-
-    // Cone radius perpendicular to beam axis (for minor axis)
-    const coneRadius = totalDist * Math.tan(halfAngleRad);
 
     // Cone-surface intersection: trace near/far edge rays to the surface plane.
     const nearAngle = incidenceAngle - halfAngleRad;
