@@ -125,7 +125,10 @@ export function raycastCeiling(clientX, clientY) {
 
 let sprayIndicator = null;
 let sprayMat = null;
+let hoseBarrel = null;
 const SPRAY_SEGMENTS = 48;
+const BARREL_LENGTH = 1.0;  // ft — visible nozzle barrel
+const BARREL_RADIUS = 0.06; // ft — ~1.5 inch diameter
 
 if (scene) {
   sprayMat = new THREE.MeshBasicMaterial({
@@ -140,6 +143,15 @@ if (scene) {
   sprayIndicator.renderOrder = 999;
   sprayIndicator.visible = false;
   scene.add(sprayIndicator);
+
+  // Hose barrel — a cylinder representing the nozzle, always visible while spraying
+  const barrelGeo = new THREE.CylinderBufferGeometry(BARREL_RADIUS, BARREL_RADIUS * 0.8, BARREL_LENGTH, 8);
+  // CylinderGeometry is along Y by default; we'll orient it each frame
+  const barrelMat = new THREE.MeshBasicMaterial({ color: 0x888888 });
+  hoseBarrel = new THREE.Mesh(barrelGeo, barrelMat);
+  hoseBarrel.renderOrder = 1002;
+  hoseBarrel.visible = false;
+  scene.add(hoseBarrel);
 }
 
 // Reusable arrays for disc geometry (world-space positions, triangle fan)
@@ -245,8 +257,9 @@ function _rayHitRoom(ox, oy, oz, dx, dy, dz) {
  */
 export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
   if (!sprayIndicator) return;
-  if (!params) { sprayIndicator.visible = false; return; }
-  if (!playerPos) { sprayIndicator.visible = false; return; }
+  const _hide = () => { sprayIndicator.visible = false; if (hoseBarrel) hoseBarrel.visible = false; };
+  if (!params) { _hide(); return; }
+  if (!playerPos) { _hide(); return; }
 
   // Nozzle and target in 3D
   // playerPos is the nozzle position (from getNozzlePosition)
@@ -257,7 +270,7 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
   // Beam direction
   let bx = tx - nx, by = ty - ny, bz = tz - nz;
   const bLen = Math.sqrt(bx * bx + by * by + bz * bz);
-  if (bLen < 0.01) { sprayIndicator.visible = false; return; }
+  if (bLen < 0.01) { _hide(); return; }
   bx /= bLen; by /= bLen; bz /= bLen;
 
   // Disc radius = cone cross-section at hit distance
@@ -386,6 +399,30 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
 
   sprayMat.opacity = 0.15 + 0.35 * params.strengthFactor;
   sprayIndicator.visible = true;
+
+  // --- Hose barrel: position from grip to nozzle tip ---
+  if (hoseBarrel) {
+    // Barrel center is halfway along the barrel, behind the nozzle
+    const halfLen = BARREL_LENGTH / 2;
+    hoseBarrel.position.set(
+      nx - bx * halfLen,
+      ny - by * halfLen,
+      nz - bz * halfLen,
+    );
+    // Orient barrel along beam direction
+    // THREE.js CylinderGeometry is along +Y, so we need to rotate to align with beam
+    // Use lookAt trick: place a target along the beam from the barrel center
+    const lookTarget = new THREE.Vector3(
+      nx + bx * halfLen,
+      ny + by * halfLen,
+      nz + bz * halfLen,
+    );
+    hoseBarrel.lookAt(lookTarget);
+    // CylinderGeometry is along Y, but lookAt aligns -Z. Rotate 90° on X to fix.
+    hoseBarrel.rotateX(Math.PI / 2);
+    hoseBarrel.visible = true;
+  }
+
   return _lastSprayInfo;
 }
 
@@ -395,5 +432,6 @@ export function getSprayInfo() { return _lastSprayInfo; }
 
 export function hideWaterSpray() {
   if (sprayIndicator) sprayIndicator.visible = false;
+  if (hoseBarrel) hoseBarrel.visible = false;
   _lastSprayInfo = null;
 }

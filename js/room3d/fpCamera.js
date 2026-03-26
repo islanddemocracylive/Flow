@@ -330,53 +330,82 @@ export function getPlayerPosition() {
 
 /**
  * Get the nozzle position in world space.
- * The nozzle orbits around the player at a fixed radius, always pointing
- * toward the spray target. This models the firefighter rotating the hose
- * to aim — the nozzle tip follows the aim direction, not the body facing.
+ * The nozzle orbits on a sphere around the player's shoulder pivot,
+ * following the aim direction both horizontally and vertically.
+ * When aiming up, hands rise; when aiming down, hands lower.
+ *
+ * The pivot point is at shoulder height (eye - 0.5 ft). The nozzle
+ * extends NOZZLE_ARM_LENGTH from the pivot in the aim direction,
+ * clamped so it can't go below hip level or above head level.
  *
  * @param {number} targetX - world X of spray target
  * @param {number} targetY - world Y of spray target
  * @param {number} targetZ - world Z of spray target
  */
-const NOZZLE_FORWARD = 1.5;  // ft in front of body (horizontal orbit radius)
-const NOZZLE_DROP = 1.5;     // ft below eye level
-export function getNozzlePosition(targetX, targetY, targetZ) {
-  if (!fpPosition) return { x: 0, y: EYE_HEIGHT - NOZZLE_DROP, z: 0 };
+const NOZZLE_ARM_LENGTH = 1.5; // ft from shoulder pivot to nozzle tip
+const SHOULDER_DROP = 0.5;     // ft below eye level to shoulder pivot
+const NOZZLE_Y_MIN = -2.0;    // max drop below shoulder (hip level)
+const NOZZLE_Y_MAX = 1.0;     // max rise above shoulder (overhead)
 
-  const nozzleY = fpPosition.y - NOZZLE_DROP;
+export function getNozzlePosition(targetX, targetY, targetZ) {
+  if (!fpPosition) return { x: 0, y: EYE_HEIGHT - SHOULDER_DROP, z: 0 };
+
+  // Shoulder pivot point
+  const shoulderY = fpPosition.y - SHOULDER_DROP;
 
   if (targetX == null) {
     // No target — use look direction as fallback
     const fx = -Math.sin(fpYaw);
     const fz = -Math.cos(fpYaw);
     return {
-      x: fpPosition.x + fx * NOZZLE_FORWARD,
-      y: nozzleY,
-      z: fpPosition.z + fz * NOZZLE_FORWARD,
+      x: fpPosition.x + fx * NOZZLE_ARM_LENGTH,
+      y: shoulderY,
+      z: fpPosition.z + fz * NOZZLE_ARM_LENGTH,
     };
   }
 
-  // Direction from player body to target (horizontal only for the orbit)
+  // 3D direction from shoulder to target
   let dx = targetX - fpPosition.x;
+  let dy = targetY - shoulderY;
   let dz = targetZ - fpPosition.z;
-  const hLen = Math.sqrt(dx * dx + dz * dz);
-  if (hLen < 0.01) {
-    // Target directly above/below — use look direction
+  const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+  if (len < 0.01) {
     const fx = -Math.sin(fpYaw);
     const fz = -Math.cos(fpYaw);
     return {
-      x: fpPosition.x + fx * NOZZLE_FORWARD,
-      y: nozzleY,
-      z: fpPosition.z + fz * NOZZLE_FORWARD,
+      x: fpPosition.x + fx * NOZZLE_ARM_LENGTH,
+      y: shoulderY,
+      z: fpPosition.z + fz * NOZZLE_ARM_LENGTH,
     };
   }
-  dx /= hLen;
-  dz /= hLen;
+
+  // Normalize and scale to arm length
+  dx /= len; dy /= len; dz /= len;
+
+  // Clamp vertical component so nozzle stays in realistic range
+  let nozzleY = shoulderY + dy * NOZZLE_ARM_LENGTH;
+  nozzleY = Math.max(shoulderY + NOZZLE_Y_MIN, Math.min(shoulderY + NOZZLE_Y_MAX, nozzleY));
+
+  // Recompute horizontal offset to maintain arm length
+  const yOff = nozzleY - shoulderY;
+  const hLen = Math.sqrt(Math.max(0, NOZZLE_ARM_LENGTH * NOZZLE_ARM_LENGTH - yOff * yOff));
+
+  // Horizontal direction toward target
+  const hDist = Math.sqrt(dx * dx + dz * dz);
+  let hx, hz;
+  if (hDist > 0.001) {
+    hx = (dx / hDist) * hLen;
+    hz = (dz / hDist) * hLen;
+  } else {
+    hx = -Math.sin(fpYaw) * hLen;
+    hz = -Math.cos(fpYaw) * hLen;
+  }
 
   return {
-    x: fpPosition.x + dx * NOZZLE_FORWARD,
+    x: fpPosition.x + hx,
     y: nozzleY,
-    z: fpPosition.z + dz * NOZZLE_FORWARD,
+    z: fpPosition.z + hz,
   };
 }
 
