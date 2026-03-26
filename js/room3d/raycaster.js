@@ -237,8 +237,6 @@ function _rayHitRoom(ox, oy, oz, dx, dy, dz) {
   return bestT < Infinity ? [bx, by, bz] : null;
 }
 
-export function getOverflowParams() { return null; }
-
 /**
  * Show the spray indicator as a 3D disc projected onto room surfaces.
  * The disc is perpendicular to the spray beam at the hit distance,
@@ -324,6 +322,55 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
     }
   }
 
+  // --- Compute projected surface area and impact angle ---
+  // Area from triangle fan: sum of cross-product magnitudes / 2
+  let totalArea = 0;
+  const cx = _discPositions[0], cy = _discPositions[1], cz = _discPositions[2];
+  for (let i = 0; i < SPRAY_SEGMENTS; i++) {
+    const i1 = (i + 1) * 3;
+    const i2 = ((i + 1) % SPRAY_SEGMENTS + 1) * 3;
+    // Edge vectors from center to each vertex
+    const e1x = _discPositions[i1] - cx, e1y = _discPositions[i1 + 1] - cy, e1z = _discPositions[i1 + 2] - cz;
+    const e2x = _discPositions[i2] - cx, e2y = _discPositions[i2 + 1] - cy, e2z = _discPositions[i2 + 2] - cz;
+    // Cross product magnitude = 2 * triangle area
+    const crossX = e1y * e2z - e1z * e2y;
+    const crossY = e1z * e2x - e1x * e2z;
+    const crossZ = e1x * e2y - e1y * e2x;
+    totalArea += Math.sqrt(crossX * crossX + crossY * crossY + crossZ * crossZ);
+  }
+  totalArea *= 0.5; // each cross product gives 2× triangle area
+
+  // Ideal disc area (perpendicular circle at this distance)
+  const idealArea = Math.PI * discRadius * discRadius;
+
+  // Impact angle at center: angle between beam direction and surface normal
+  // Detect which surface the center hit is on from its position
+  let impactCos = 1; // 1 = perpendicular (ideal)
+  const hx = centerHit[0], hy = centerHit[1], hz = centerHit[2];
+  if (Math.abs(hy - (ROOM_H - SURFACE_OFFSET)) < 0.01)      impactCos = Math.abs(by); // ceiling
+  else if (Math.abs(hy - SURFACE_OFFSET) < 0.01)             impactCos = Math.abs(by); // floor
+  else if (Math.abs(hx - SURFACE_OFFSET) < 0.01)             impactCos = Math.abs(bx); // wall-x0
+  else if (Math.abs(hx - (ROOM_W - SURFACE_OFFSET)) < 0.01) impactCos = Math.abs(bx); // wall-xW
+  else if (Math.abs(hz - SURFACE_OFFSET) < 0.01)             impactCos = Math.abs(bz); // wall-z0
+  else if (Math.abs(hz - (ROOM_D - SURFACE_OFFSET)) < 0.01) impactCos = Math.abs(bz); // wall-zD
+
+  // Effective fraction: combines geometric projection with attack angle
+  // At perpendicular: impactCos=1, areaRatio≈1 → 100% effective
+  // At oblique angles: impactCos<1, area stretches → less effective per unit area
+  const areaRatio = idealArea > 0.01 ? Math.min(1, idealArea / totalArea) : 1;
+  const effectiveFraction = impactCos * areaRatio;
+
+  _lastSprayInfo = {
+    projectedArea: totalArea,
+    idealArea,
+    areaRatio,
+    impactAngle: Math.acos(Math.min(1, impactCos)) * 180 / Math.PI,
+    impactCos,
+    effectiveFraction,
+    discRadius,
+    beamLength: bLen,
+  };
+
   // Position mesh at origin since vertices are in world space
   sprayIndicator.position.set(0, 0, 0);
   sprayIndicator.quaternion.identity();
@@ -339,8 +386,14 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
 
   sprayMat.opacity = 0.15 + 0.35 * params.strengthFactor;
   sprayIndicator.visible = true;
+  return _lastSprayInfo;
 }
+
+/** Spray info from last showWaterSpray call */
+let _lastSprayInfo = null;
+export function getSprayInfo() { return _lastSprayInfo; }
 
 export function hideWaterSpray() {
   if (sprayIndicator) sprayIndicator.visible = false;
+  _lastSprayInfo = null;
 }

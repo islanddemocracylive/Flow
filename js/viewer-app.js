@@ -171,8 +171,7 @@ function loop() {
 
         // Always show spray visual on whatever surface we hit
         const displayParams = sprayParams || {
-          majorR: 1.5, minorR: 1.5, sprayAngle: 0,
-          strengthFactor: 0.5, centerOffset: 0, surface: hit.surface,
+          minorR: 1.5, strengthFactor: 0.5,
         };
         room3d.showWaterSpray(hit.worldX, hit.worldZ, displayParams, hit, nozzlePos);
 
