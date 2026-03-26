@@ -16,13 +16,11 @@
     }
     #status.connected { color: #4a4; }
 
-    /* Show touch controls only on narrow screens (mobile/tablet) */
+    /* Touch controls hidden by default, shown via JS on touch devices */
     .joystick-zone, .spray-btn, #crosshair { display: none !important; }
-    @media (max-width: 1024px) {
-      .joystick-zone { display: block !important; }
-      .spray-btn { display: flex !important; }
-      #crosshair { display: block !important; }
-    }
+    .touch-device .joystick-zone { display: block !important; }
+    .touch-device .spray-btn { display: flex !important; }
+    .touch-device #crosshair { display: block !important; }
 
     /* Joystick zones */
     .joystick-zone {
@@ -152,6 +150,16 @@
     pointer-events: none;
   "></div>
 
+  <script>
+    // Detect touch device (mobile/tablet) and add class for CSS
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+      document.body.classList.add('touch-device');
+    }
+    // Prevent joystick/spray-button mouse/touch events from triggering spray
+    document.querySelectorAll('.joystick-zone, .spray-btn').forEach(function(el) {
+      el.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+    });
+  </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script type="module" src="js/viewer-app.js"></script>
 </body>

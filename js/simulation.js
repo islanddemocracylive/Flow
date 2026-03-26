@@ -18,7 +18,7 @@
  */
 
 import {
-  ROOM_H, ROOM_H_M, FT_TO_M,
+  ROOM_W, ROOM_D, ROOM_H, ROOM_H_M, FT_TO_M,
   GAS_LAYER_MASS, GAS_CP, FLASHOVER_TEMP, REIGNITION_TEMP,
   AMBIENT_TEMP, CELL_HRR_MAX,
   ROOM_AIR_MASS, AMBIENT_O2, O2_FLAMING_LIMIT, O2_LETHAL_LIMIT, O2_PER_MJ,
@@ -161,34 +161,91 @@ export class FireSimulation {
   }
 
   /**
-   * Compute spray parameters based on cone geometry from nozzle to ceiling.
+   * Compute spray parameters based on cone geometry from nozzle to a surface.
    *
-   * The nozzle produces a cone of water. The spray radius on the ceiling is
-   * determined by the cone's half-angle and the distance to the ceiling hit,
-   * not a flat base radius. Spraying straight up gives a tight ~0.7ft circle;
-   * spraying at an angle elongates into an ellipse as the cone intersects
-   * the ceiling obliquely.
+   * The nozzle produces a cone of water. The spray footprint on any surface is
+   * determined by the cone's half-angle and incidence angle against that surface.
+   * Spraying perpendicular gives a tight circle; oblique angles elongate into
+   * an ellipse as the cone intersects the plane at a slant.
    *
    * Cone half-angle scales inversely with PSI (higher pressure = tighter
    * stream). The Spray Width slider acts as a multiplier on the cone angle.
    *
    * Strength is constant until 70% of max reach, then fades linearly.
-   * The cone geometry itself handles the natural per-cell reduction at
-   * distance (same water volume spread over larger area).
+   * The cone geometry handles natural per-cell reduction at distance.
    *
-   * playerPos: {x, y, z} in room coords.
-   * worldX, worldZ: continuous ceiling hit point in room coords.
-   * Returns null if out of range, or { majorR, minorR, sprayAngle, strengthFactor }.
+   * @param {number} worldX - hit X in room coords
+   * @param {number} worldZ - hit Z in room coords
+   * @param {{x,y,z}} playerPos - player position in room coords
+   * @param {string} [surface='ceiling'] - 'ceiling'|'floor'|'wall-x0'|'wall-xW'|'wall-z0'|'wall-zD'
+   * @param {number} [wallY] - y-coordinate of wall hit (only for wall surfaces)
+   * @returns {object|null} { majorR, minorR, sprayAngle, strengthFactor, centerOffset, surface }
    */
-  getSprayParams(worldX, worldZ, playerPos) {
-    const HOSE_HEIGHT = 4;              // hose held at chest level (ft)
-    const verticalDist = ROOM_H - HOSE_HEIGHT;
+  getSprayParams(worldX, worldZ, playerPos, surface, wallY) {
+    // playerPos is now the nozzle position (from getNozzlePosition)
+    const nozzleY = playerPos.y || 4;   // fallback for legacy callers
+    if (!surface) surface = 'ceiling';
 
-    // 3D distance from hose to ceiling hit point
-    const dx = worldX - playerPos.x;
-    const dz = worldZ - playerPos.z;
-    const horizDist = Math.sqrt(dx * dx + dz * dz);
-    const totalDist = Math.sqrt(horizDist * horizDist + verticalDist * verticalDist);
+    // Perpendicular distance from nozzle to the hit surface plane,
+    // and the "surface distance" (distance along the surface from the
+    // perpendicular foot to the actual hit point).
+    let perpDist, surfaceDist, sprayAngle;
+
+    if (surface === 'ceiling') {
+      perpDist = ROOM_H - nozzleY;
+      const dx = worldX - playerPos.x;
+      const dz = worldZ - playerPos.z;
+      surfaceDist = Math.sqrt(dx * dx + dz * dz);
+      sprayAngle = Math.atan2(dz, dx);
+    } else if (surface === 'floor') {
+      perpDist = nozzleY;
+      const dx = worldX - playerPos.x;
+      const dz = worldZ - playerPos.z;
+      surfaceDist = Math.sqrt(dx * dx + dz * dz);
+      sprayAngle = Math.atan2(dz, dx);
+    } else {
+      // Wall surfaces
+      const wy = (wallY != null) ? wallY : (ROOM_H / 2);
+      const dy = wy - nozzleY;
+
+      if (surface === 'wall-x0') {
+        perpDist = playerPos.x;
+        const dz = worldZ - playerPos.z;
+        surfaceDist = Math.sqrt(dy * dy + dz * dz);
+        // Spray angle on wall: direction from perpendicular foot to hit point
+        // For x-wall, the surface axes are (Z horizontal, Y vertical)
+        sprayAngle = Math.atan2(dz, dy);
+      } else if (surface === 'wall-xW') {
+        perpDist = ROOM_W - playerPos.x;
+        const dz = worldZ - playerPos.z;
+        surfaceDist = Math.sqrt(dy * dy + dz * dz);
+        sprayAngle = Math.atan2(dz, dy);
+      } else if (surface === 'wall-z0') {
+        perpDist = playerPos.z;
+        const dx = worldX - playerPos.x;
+        surfaceDist = Math.sqrt(dy * dy + dx * dx);
+        // For z-wall, surface axes are (X horizontal, Y vertical)
+        sprayAngle = Math.atan2(dx, dy);
+      } else if (surface === 'wall-zD') {
+        perpDist = ROOM_D - playerPos.z;
+        const dx = worldX - playerPos.x;
+        surfaceDist = Math.sqrt(dy * dy + dx * dx);
+        sprayAngle = Math.atan2(dx, dy);
+      } else {
+        // Unknown surface, fall back to ceiling
+        perpDist = ROOM_H - nozzleY;
+        const dx = worldX - playerPos.x;
+        const dz = worldZ - playerPos.z;
+        surfaceDist = Math.sqrt(dx * dx + dz * dz);
+        sprayAngle = Math.atan2(dz, dx);
+      }
+    }
+
+    // Ensure perpDist is positive (player could be right at a wall)
+    perpDist = Math.max(perpDist, 0.1);
+
+    // 3D distance from hose to surface hit point
+    const totalDist = Math.sqrt(surfaceDist * surfaceDist + perpDist * perpDist);
 
     // Max reach scales with PSI: ~20 ft at 100 PSI (spec §5.1: 15-25 ft effective)
     const maxReach = this.sprayPSI * 0.2;
@@ -196,40 +253,31 @@ export class FireSimulation {
 
     // Cone half-angle (radians): ~8° at 100 PSI with waterRadius=2 (narrow fog).
     // Higher PSI = tighter cone. waterRadius slider scales the angle.
-    // Base: 8° at 100 PSI, radius=2. Inversely proportional to sqrt(PSI).
-    const baseDeg = 8;   // degrees at 100 PSI, waterRadius=2
+    const baseDeg = 8;
     const halfAngleDeg = baseDeg * (this.waterRadius / 2) * Math.sqrt(100 / this.sprayPSI);
     const halfAngleRad = halfAngleDeg * Math.PI / 180;
 
-    // Incidence angle: 0 = directly overhead, π/2 = horizontal
-    const incidenceAngle = Math.atan2(horizDist, verticalDist);
+    // Incidence angle: 0 = perpendicular to surface, π/2 = parallel
+    const incidenceAngle = Math.atan2(surfaceDist, perpDist);
 
-    // Cone radius perpendicular to beam axis (for minor axis on ceiling)
+    // Cone radius perpendicular to beam axis (for minor axis)
     const coneRadius = totalDist * Math.tan(halfAngleRad);
 
-    // True cone-ceiling intersection: trace each edge ray in the vertical
-    // plane to find where they hit the ceiling. The near edge (toward player)
-    // and far edge (away from player) hit at different horizontal distances
-    // from directly overhead, producing an asymmetric ellipse.
-    const nearAngle = incidenceAngle - halfAngleRad; // can be negative
+    // Cone-surface intersection: trace near/far edge rays to the surface plane.
+    const nearAngle = incidenceAngle - halfAngleRad;
     const farAngle  = incidenceAngle + halfAngleRad;
-
-    // Clamp far angle so tan doesn't blow up (>~87° means spray barely
-    // reaches ceiling on that edge)
     const clampedFar = Math.min(farAngle, Math.PI / 2 - 0.05);
-    const nearDist = verticalDist * Math.tan(nearAngle);
-    const farDist  = verticalDist * Math.tan(clampedFar);
+    const nearDist = perpDist * Math.tan(nearAngle);
+    const farDist  = perpDist * Math.tan(clampedFar);
 
-    // Ellipse major axis and center from the two edge intercepts
-    const majorR = Math.max(1.0, (farDist - nearDist) / 2);
-    const minorR = Math.max(1.0, coneRadius);
+    const rawMajor = (farDist - nearDist) / 2;
+    const minorR = Math.max(0.25, coneRadius);
+    // Cap major axis: at grazing incidence tan() blows up, producing absurdly
+    // elongated ellipses. Limit to 4× the minor radius — still visibly elongated
+    // but not a floor-to-ceiling sliver.
+    const majorR = Math.max(0.25, Math.min(rawMajor, minorR * 4));
     const ellipseCenterDist = (nearDist + farDist) / 2;
-
-    // Offset from the hit point to the true ellipse center along the spray direction
-    const centerOffset = ellipseCenterDist - horizDist;
-
-    // Spray direction angle on the ceiling
-    const sprayAngle = Math.atan2(dz, dx);
+    const centerOffset = ellipseCenterDist - surfaceDist;
 
     // Strength: mild dropoff near max reach where the stream breaks apart.
     const reachRatio = totalDist / maxReach;
@@ -243,6 +291,7 @@ export class FireSimulation {
       sprayAngle,
       strengthFactor,
       centerOffset,
+      surface,
     };
   }
 

@@ -13,8 +13,8 @@ import { buildWalls, wallGroup, doorFrameGroup } from './walls.js';
 import { panelMeshes } from './ceiling.js';
 import { buildVentMeshes } from './vents.js';
 import { buildObstacleMeshes } from './obstacles.js';
-import { raycastCeiling, showWaterSpray, hideWaterSpray } from './raycaster.js';
-import { updateCamera, resetToStart, getPlayerPosition } from './fpCamera.js';
+import { raycastCeiling, showWaterSpray, hideWaterSpray, getOverflowParams } from './raycaster.js';
+import { updateCamera, resetToStart, getPlayerPosition, getNozzlePosition } from './fpCamera.js';
 import { initOrbitCamera, enableOrbit, disableOrbit, updateOrbit } from './orbitCamera.js';
 import { buildStartMarkers } from './startMarkers.js';
 
@@ -263,8 +263,10 @@ const room3d = {
   raycastCeiling,
   showWaterSpray,
   hideWaterSpray,
+  getOverflowParams,
   resetToStart,
   getPlayerPosition,
+  getNozzlePosition,
 };
 
 export default room3d;

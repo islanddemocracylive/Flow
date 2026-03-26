@@ -328,6 +328,58 @@ export function getPlayerPosition() {
   return { x: fpPosition.x, y: fpPosition.y, z: fpPosition.z };
 }
 
+/**
+ * Get the nozzle position in world space.
+ * The nozzle orbits around the player at a fixed radius, always pointing
+ * toward the spray target. This models the firefighter rotating the hose
+ * to aim — the nozzle tip follows the aim direction, not the body facing.
+ *
+ * @param {number} targetX - world X of spray target
+ * @param {number} targetY - world Y of spray target
+ * @param {number} targetZ - world Z of spray target
+ */
+const NOZZLE_FORWARD = 1.5;  // ft in front of body (horizontal orbit radius)
+const NOZZLE_DROP = 1.5;     // ft below eye level
+export function getNozzlePosition(targetX, targetY, targetZ) {
+  if (!fpPosition) return { x: 0, y: EYE_HEIGHT - NOZZLE_DROP, z: 0 };
+
+  const nozzleY = fpPosition.y - NOZZLE_DROP;
+
+  if (targetX == null) {
+    // No target — use look direction as fallback
+    const fx = -Math.sin(fpYaw);
+    const fz = -Math.cos(fpYaw);
+    return {
+      x: fpPosition.x + fx * NOZZLE_FORWARD,
+      y: nozzleY,
+      z: fpPosition.z + fz * NOZZLE_FORWARD,
+    };
+  }
+
+  // Direction from player body to target (horizontal only for the orbit)
+  let dx = targetX - fpPosition.x;
+  let dz = targetZ - fpPosition.z;
+  const hLen = Math.sqrt(dx * dx + dz * dz);
+  if (hLen < 0.01) {
+    // Target directly above/below — use look direction
+    const fx = -Math.sin(fpYaw);
+    const fz = -Math.cos(fpYaw);
+    return {
+      x: fpPosition.x + fx * NOZZLE_FORWARD,
+      y: nozzleY,
+      z: fpPosition.z + fz * NOZZLE_FORWARD,
+    };
+  }
+  dx /= hLen;
+  dz /= hLen;
+
+  return {
+    x: fpPosition.x + dx * NOZZLE_FORWARD,
+    y: nozzleY,
+    z: fpPosition.z + dz * NOZZLE_FORWARD,
+  };
+}
+
 /** Call each frame while spraying with the mouse's NDC position (-1..1). */
 export function setSprayScreenPosition(ndcX, ndcY) {
   sprayEdgeActive = true;

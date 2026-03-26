@@ -9,6 +9,7 @@ import { FireSimulation } from './simulation.js';
 import { SimNetwork } from './network.js';
 import room3d from './room3d/index.js';
 import { enableFPCamera, setSprayScreenPosition, clearSprayScreenPosition } from './room3d/fpCamera.js';
+import { updateArcDebug, toggleArcDebug } from './room3d/arcDebug.js';
 
 // Create simulation as a data container (no stepping)
 const sim = new FireSimulation(GRID_COLS, GRID_ROWS);
@@ -160,16 +161,27 @@ function loop() {
     if (spraying) {
       const hit = room3d.raycastCeiling(sprayX, sprayY);
       if (hit) {
-        const playerPos = room3d.getPlayerPosition();
-        const sprayParams = sim.getSprayParams(hit.worldX, hit.worldZ, playerPos);
+        // Resolve hit to 3D target so nozzle can orbit toward it
+        const targetY = hit.surface === 'ceiling' ? 8 : hit.surface === 'floor' ? 0 : (hit.wallY || 4);
+        const nozzlePos = room3d.getNozzlePosition(hit.worldX, targetY, hit.worldZ);
+        // Use nozzle position for spray visuals and arc (origin of water)
+        const sprayParams = sim.getSprayParams(
+          hit.worldX, hit.worldZ, nozzlePos, hit.surface, hit.wallY
+        );
 
         // Always show spray visual on whatever surface we hit
-        const displayParams = sprayParams || { majorR: 1.5, minorR: 1.5, sprayAngle: 0, strengthFactor: 0.5, centerOffset: 0 };
-        room3d.showWaterSpray(hit.worldX, hit.worldZ, displayParams, hit);
+        const displayParams = sprayParams || {
+          majorR: 1.5, minorR: 1.5, sprayAngle: 0,
+          strengthFactor: 0.5, centerOffset: 0, surface: hit.surface,
+        };
+        room3d.showWaterSpray(hit.worldX, hit.worldZ, displayParams, hit, nozzlePos);
 
-        // Only send water to simulation if the ceiling is in range
+        // Update arc debug visualization (from nozzle, not eye)
+        updateArcDebug(nozzlePos, hit, sim.sprayPSI);
+
+        // Send water to simulation
         if (sprayParams) {
-          net.sendWater(hit.worldX, hit.worldZ, playerPos);
+          net.sendWater(hit.worldX, hit.worldZ, nozzlePos);
           const rect = room3dContainer.getBoundingClientRect();
           const ndcX = ((sprayX - rect.left) / rect.width) * 2 - 1;
           const ndcY = -((sprayY - rect.top) / rect.height) * 2 + 1;
@@ -178,6 +190,7 @@ function loop() {
       }
     } else {
       clearSprayScreenPosition();
+      updateArcDebug(null, null, 0); // hide arc when not spraying
     }
 
     room3d.updatePanels(sim);
@@ -250,6 +263,11 @@ function _updateViewerHUD(sim) {
     }
   }
 }
+
+// Arc debug toggle (B key)
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'b' || e.key === 'B') toggleArcDebug();
+});
 
 // Initial + dynamic resize
 if (room3d.available) {
