@@ -78,6 +78,12 @@ export function setupAdminPanel(sim, state, net) {
 
   refreshScenarioList();
 
+  // Auto-select and load the first scenario on page load
+  if (scenarioSelect && scenarioSelect.options.length > 1) {
+    scenarioSelect.value = scenarioSelect.options[1].value; // skip "— New Scenario —"
+    scenarioSelect.dispatchEvent(new Event('change'));
+  }
+
   if (scenarioSelect) {
     scenarioSelect.addEventListener('change', () => {
       const name = scenarioSelect.value;
