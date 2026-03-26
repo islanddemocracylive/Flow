@@ -114,6 +114,7 @@ if (room3dContainer) {
 if (sprayBtn) {
   function startSpray(e) {
     e.preventDefault();
+    e.stopPropagation();
     spraying = true;
     sprayBtn.classList.add('active');
     // Target screen center
@@ -123,6 +124,7 @@ if (sprayBtn) {
   }
   function stopSpray(e) {
     e.preventDefault();
+    e.stopPropagation();
     spraying = false;
     sprayBtn.classList.remove('active');
     room3d.hideWaterSpray();

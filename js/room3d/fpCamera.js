@@ -185,10 +185,12 @@ function setupDpadButton(id, key) {
 
   function startPress(e) {
     e.preventDefault();
+    e.stopPropagation(); // prevent touch from reaching canvas look handler
     keysPressed.add(key.toLowerCase());
   }
   function endPress(e) {
     e.preventDefault();
+    e.stopPropagation();
     keysPressed.delete(key.toLowerCase());
   }
 
