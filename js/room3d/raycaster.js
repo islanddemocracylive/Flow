@@ -440,12 +440,12 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
   if (sprayCone && sprayConePositions) {
     const coneLen = bLen;
 
-    // Piecewise spread model matching simulation: coherent core, then 4° expansion
-    const BREAKUP = 5.0; // ft — coherent core length
-    const TAN_ALPHA = Math.tan(4.0 * Math.PI / 180); // 4° half-angle
-    const _coneR = (d) => d <= BREAKUP
-      ? NOZZLE_RADIUS
-      : NOZZLE_RADIUS + TAN_ALPHA * (d - BREAKUP);
+    // Interpolate from nozzle opening to discRadius (which matches the projected disc).
+    // discRadius comes from params.minorR via getSprayParams piecewise model.
+    const _coneR = (d) => {
+      const frac = coneLen > 0.01 ? d / coneLen : 0;
+      return NOZZLE_RADIUS + (discRadius - NOZZLE_RADIUS) * frac;
+    };
 
     // Unit basis vectors perpendicular to beam
     const u1x = ux / discRadius, u1y = uy / discRadius, u1z = uz / discRadius;
