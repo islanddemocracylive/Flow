@@ -25,17 +25,11 @@ const FT_PER_M = 1 / 0.3048;
 let arcLine = null;
 let arcPositions = null;
 let arcMaterial = null;
-let coneMesh = null;
-let conePositions = null;
-let coneMaterial = null;
-const CONE_RINGS = 8;     // rings along the cone length
-const CONE_SEGMENTS = 24; // segments around each ring
 let enabled = false;
 let debugOverlay = null;
 let lastInfo = null;
 
 if (scene) {
-  // Arc line
   arcPositions = new Float32Array((ARC_SEGMENTS + 1) * 3);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(arcPositions, 3));
@@ -50,25 +44,6 @@ if (scene) {
   arcLine.frustumCulled = false;
   arcLine.visible = false;
   scene.add(arcLine);
-
-  // Cone wireframe: rings along the beam + longitudinal lines
-  // Each ring has CONE_SEGMENTS line segments, plus CONE_SEGMENTS longitudinal lines
-  // Total line segments: CONE_RINGS * CONE_SEGMENTS (rings) + CONE_SEGMENTS (longitudinals)
-  const totalVerts = (CONE_RINGS * CONE_SEGMENTS + CONE_SEGMENTS) * 2;
-  conePositions = new Float32Array(totalVerts * 3);
-  const coneGeo = new THREE.BufferGeometry();
-  coneGeo.setAttribute('position', new THREE.BufferAttribute(conePositions, 3));
-  coneMaterial = new THREE.LineBasicMaterial({
-    color: 0x44aaff,
-    transparent: true,
-    opacity: 0.3,
-    depthTest: true,
-  });
-  coneMesh = new THREE.LineSegments(coneGeo, coneMaterial);
-  coneMesh.renderOrder = 998;
-  coneMesh.frustumCulled = false;
-  coneMesh.visible = false;
-  scene.add(coneMesh);
 }
 
 /** Compute nozzle exit velocity in ft/s from PSI */
@@ -124,7 +99,6 @@ export function updateArcDebug(playerPos, hit, sprayPSI) {
   if (!arcLine) return null;
   if (!enabled || !playerPos || !hit) {
     arcLine.visible = false;
-    if (coneMesh) coneMesh.visible = false;
     _updateOverlay(null);
     lastInfo = null;
     return null;
@@ -147,7 +121,7 @@ export function updateArcDebug(playerPos, hit, sprayPSI) {
     // Out of range — draw straight red line
     arcMaterial.color.setHex(0xff4444);
     _drawStraightLine(nozzle, target);
-    if (coneMesh) coneMesh.visible = false;
+
     const info = { exitVelocity: v0, launchAngle: null, impactAngle: null, effectiveFraction: 0, range: R, reachable: false };
     _updateOverlay(info);
     lastInfo = info;
@@ -190,78 +164,6 @@ export function updateArcDebug(playerPos, hit, sprayPSI) {
   arcLine.geometry.computeBoundingSphere();
   arcLine.geometry.setDrawRange(0, ARC_SEGMENTS + 1);
   arcLine.visible = true;
-
-  // --- Cone wireframe ---
-  if (coneMesh && conePositions) {
-    // Beam direction (normalized)
-    const beamLen = Math.sqrt(dx * dx + (target.y - nozzle.y) * (target.y - nozzle.y) + dz * dz);
-    const bdx = dx / beamLen, bdy = (target.y - nozzle.y) / beamLen, bdz = dz / beamLen;
-
-    // Basis vectors perpendicular to beam
-    let upx = 0, upy = 1, upz = 0;
-    if (Math.abs(bdy) > 0.95) { upx = 1; upy = 0; upz = 0; }
-    let u1x = bdy * upz - bdz * upy, u1y = bdz * upx - bdx * upz, u1z = bdx * upy - bdy * upx;
-    const u1L = Math.sqrt(u1x * u1x + u1y * u1y + u1z * u1z);
-    u1x /= u1L; u1y /= u1L; u1z /= u1L;
-    let u2x = bdy * u1z - bdz * u1y, u2y = bdz * u1x - bdx * u1z, u2z = bdx * u1y - bdy * u1x;
-    const u2L = Math.sqrt(u2x * u2x + u2y * u2y + u2z * u2z);
-    u2x /= u2L; u2y /= u2L; u2z /= u2L;
-
-    // Cone half-angle from spray params
-    const halfAngleDeg = 8 * Math.sqrt(100 / sprayPSI); // waterRadius=2 default
-    const halfAngleRad = halfAngleDeg * Math.PI / 180;
-
-    let vi = 0; // vertex index into conePositions
-    const NOZZLE_R = 0.073; // ft — 1.75" nozzle opening radius
-    // Rings along the cone — radius interpolates from nozzle to full cone spread
-    for (let r = 1; r <= CONE_RINGS; r++) {
-      const frac = r / CONE_RINGS;
-      const dist = beamLen * frac;
-      const coneR = dist * Math.tan(halfAngleRad);
-      const ringR = NOZZLE_R + (coneR - NOZZLE_R) * frac;
-      // Center of ring along beam
-      const rcx = nozzle.x + bdx * dist;
-      const rcy = nozzle.y + bdy * dist;
-      const rcz = nozzle.z + bdz * dist;
-
-      for (let s = 0; s < CONE_SEGMENTS; s++) {
-        const a1 = (s / CONE_SEGMENTS) * Math.PI * 2;
-        const a2 = ((s + 1) / CONE_SEGMENTS) * Math.PI * 2;
-        const cos1 = Math.cos(a1), sin1 = Math.sin(a1);
-        const cos2 = Math.cos(a2), sin2 = Math.sin(a2);
-        // Point 1
-        conePositions[vi++] = rcx + (u1x * cos1 + u2x * sin1) * ringR;
-        conePositions[vi++] = rcy + (u1y * cos1 + u2y * sin1) * ringR;
-        conePositions[vi++] = rcz + (u1z * cos1 + u2z * sin1) * ringR;
-        // Point 2
-        conePositions[vi++] = rcx + (u1x * cos2 + u2x * sin2) * ringR;
-        conePositions[vi++] = rcy + (u1y * cos2 + u2y * sin2) * ringR;
-        conePositions[vi++] = rcz + (u1z * cos2 + u2z * sin2) * ringR;
-      }
-    }
-    // Longitudinal lines from nozzle opening (1.75" diameter) to outer ring
-    const NOZZLE_RADIUS = 0.073; // ft — 1.75" diameter / 2
-    const outerR = beamLen * Math.tan(halfAngleRad);
-    const ocx = target.x, ocy = target.y, ocz = target.z;
-    for (let s = 0; s < CONE_SEGMENTS; s++) {
-      const a = (s / CONE_SEGMENTS) * Math.PI * 2;
-      const cosA = Math.cos(a), sinA = Math.sin(a);
-      // Nozzle opening point (small circle at nozzle tip)
-      conePositions[vi++] = nozzle.x + (u1x * cosA + u2x * sinA) * NOZZLE_RADIUS;
-      conePositions[vi++] = nozzle.y + (u1y * cosA + u2y * sinA) * NOZZLE_RADIUS;
-      conePositions[vi++] = nozzle.z + (u1z * cosA + u2z * sinA) * NOZZLE_RADIUS;
-      // Outer ring point
-      conePositions[vi++] = ocx + (u1x * cosA + u2x * sinA) * outerR;
-      conePositions[vi++] = ocy + (u1y * cosA + u2y * sinA) * outerR;
-      conePositions[vi++] = ocz + (u1z * cosA + u2z * sinA) * outerR;
-    }
-    // Zero out any remaining
-    while (vi < conePositions.length) conePositions[vi++] = 0;
-
-    coneMesh.geometry.attributes.position.needsUpdate = true;
-    coneMesh.geometry.computeBoundingSphere();
-    coneMesh.visible = true;
-  }
 
   // Impact velocity
   const vyImpact = vy - G * tImpact;
@@ -384,7 +286,7 @@ export function toggleArcDebug() {
   enabled = !enabled;
   if (!enabled) {
     if (arcLine) arcLine.visible = false;
-    if (coneMesh) coneMesh.visible = false;
+
     if (debugOverlay) debugOverlay.style.display = 'none';
     lastInfo = null;
   }

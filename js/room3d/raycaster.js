@@ -126,15 +126,21 @@ export function raycastCeiling(clientX, clientY) {
 let sprayIndicator = null;
 let sprayMat = null;
 let hoseBarrel = null;
+let sprayCone = null;
+let sprayConePositions = null;
 const SPRAY_SEGMENTS = 48;
 const BARREL_LENGTH = 1.0;  // ft — visible nozzle barrel
 const BARREL_RADIUS = 0.073; // ft — 1.75 inch diameter (standard nozzle)
+const CONE_RINGS = 8;
+const CONE_SEGMENTS = 24;
+const NOZZLE_RADIUS = 0.073; // ft — matches barrel
 
 if (scene) {
+  // Spray disc with vertex colors for gradient (center bright, edges fade)
   sprayMat = new THREE.MeshBasicMaterial({
-    color: 0x44aaff,
+    vertexColors: true,
     transparent: true,
-    opacity: 0.4,
+    opacity: 0.5,
     side: THREE.DoubleSide,
     depthWrite: false,
     depthTest: true,
@@ -144,15 +150,34 @@ if (scene) {
   sprayIndicator.visible = false;
   scene.add(sprayIndicator);
 
-  // Hose barrel — a cylinder representing the nozzle, always visible while spraying
+  // Hose barrel — a cylinder representing the nozzle
   const barrelGeo = new THREE.CylinderBufferGeometry(BARREL_RADIUS, BARREL_RADIUS * 0.8, BARREL_LENGTH, 8);
-  // CylinderGeometry is along Y by default; we'll orient it each frame
   const barrelMat = new THREE.MeshBasicMaterial({ color: 0x888888 });
   hoseBarrel = new THREE.Mesh(barrelGeo, barrelMat);
   hoseBarrel.renderOrder = 1002;
   hoseBarrel.visible = false;
   scene.add(hoseBarrel);
+
+  // Spray cone — wireframe from nozzle to disc, always visible while spraying
+  const totalConeVerts = (CONE_RINGS * CONE_SEGMENTS + CONE_SEGMENTS) * 2;
+  sprayConePositions = new Float32Array(totalConeVerts * 3);
+  const coneGeo = new THREE.BufferGeometry();
+  coneGeo.setAttribute('position', new THREE.BufferAttribute(sprayConePositions, 3));
+  const coneMat = new THREE.LineBasicMaterial({
+    color: 0x44aaff,
+    transparent: true,
+    opacity: 0.2,
+    depthTest: true,
+  });
+  sprayCone = new THREE.LineSegments(coneGeo, coneMat);
+  sprayCone.renderOrder = 998;
+  sprayCone.frustumCulled = false;
+  sprayCone.visible = false;
+  scene.add(sprayCone);
 }
+
+// Vertex color arrays for gradient disc
+const _discColors = new Float32Array((SPRAY_SEGMENTS + 2) * 3);
 
 // Reusable arrays for disc geometry (world-space positions, triangle fan)
 const _discPositions = new Float32Array((SPRAY_SEGMENTS + 2) * 3);
@@ -257,7 +282,11 @@ function _rayHitRoom(ox, oy, oz, dx, dy, dz) {
  */
 export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
   if (!sprayIndicator) return;
-  const _hide = () => { sprayIndicator.visible = false; if (hoseBarrel) hoseBarrel.visible = false; };
+  const _hide = () => {
+    sprayIndicator.visible = false;
+    if (hoseBarrel) hoseBarrel.visible = false;
+    if (sprayCone) sprayCone.visible = false;
+  };
   if (!params) { _hide(); return; }
   if (!playerPos) { _hide(); return; }
 
@@ -301,10 +330,12 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
 
   // Center vertex: project hit point onto surface with offset
   const centerHit = _rayHitRoom(nx, ny, nz, bx, by, bz);
-  if (!centerHit) { sprayIndicator.visible = false; return; }
+  if (!centerHit) { _hide(); return; }
   _discPositions[0] = centerHit[0];
   _discPositions[1] = centerHit[1];
   _discPositions[2] = centerHit[2];
+  // Center color: bright blue (full intensity)
+  _discColors[0] = 0.27; _discColors[1] = 0.67; _discColors[2] = 1.0;
 
   // Edge vertices: for each segment, compute disc point then project
   for (let i = 0; i < SPRAY_SEGMENTS; i++) {
@@ -328,11 +359,12 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
       _discPositions[off + 1] = edgeHit[1];
       _discPositions[off + 2] = edgeHit[2];
     } else {
-      // Fallback: place at disc point clamped to room
       _discPositions[off] = Math.max(0, Math.min(ROOM_W, px));
       _discPositions[off + 1] = Math.max(0, Math.min(ROOM_H, py));
       _discPositions[off + 2] = Math.max(0, Math.min(ROOM_D, pz));
     }
+    // Edge color: faded (dark, blends to transparent with material opacity)
+    _discColors[off] = 0.05; _discColors[off + 1] = 0.15; _discColors[off + 2] = 0.3;
   }
 
   // --- Compute projected surface area and impact angle ---
@@ -394,11 +426,60 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
     geo.setAttribute('position', new THREE.BufferAttribute(_discPositions, 3));
     geo.setIndex(_discIndices);
   }
+  if (!geo.attributes.color || geo.attributes.color.array !== _discColors) {
+    geo.setAttribute('color', new THREE.BufferAttribute(_discColors, 3));
+  }
   geo.attributes.position.needsUpdate = true;
+  geo.attributes.color.needsUpdate = true;
   geo.computeBoundingSphere();
 
-  sprayMat.opacity = 0.15 + 0.35 * params.strengthFactor;
+  sprayMat.opacity = 0.5;
   sprayIndicator.visible = true;
+
+  // --- Spray cone wireframe ---
+  if (sprayCone && sprayConePositions) {
+    // Reuse beam basis vectors (unit length, not scaled by discRadius)
+    const u1x = ux / discRadius, u1y = uy / discRadius, u1z = uz / discRadius;
+    const u2x = vx / discRadius, u2y = vy / discRadius, u2z = vz / discRadius;
+    const halfAngleDeg = 8 * (params.minorR > 0.5 ? 2 : 1) / 2 * Math.sqrt(100 / (params.strengthFactor > 0 ? 100 : 100));
+    // Compute actual cone angle from discRadius and beamLength
+    const coneAngle = Math.atan2(discRadius, bLen);
+
+    let vi = 0;
+    // Rings
+    for (let r = 1; r <= CONE_RINGS; r++) {
+      const frac = r / CONE_RINGS;
+      const dist = bLen * frac;
+      const coneR = dist * Math.tan(coneAngle);
+      const ringR = NOZZLE_RADIUS + (coneR - NOZZLE_RADIUS) * frac;
+      const rcx = nx + bx * dist, rcy = ny + by * dist, rcz = nz + bz * dist;
+      for (let s = 0; s < CONE_SEGMENTS; s++) {
+        const a1 = (s / CONE_SEGMENTS) * Math.PI * 2;
+        const a2 = ((s + 1) / CONE_SEGMENTS) * Math.PI * 2;
+        sprayConePositions[vi++] = rcx + (u1x * Math.cos(a1) + u2x * Math.sin(a1)) * ringR;
+        sprayConePositions[vi++] = rcy + (u1y * Math.cos(a1) + u2y * Math.sin(a1)) * ringR;
+        sprayConePositions[vi++] = rcz + (u1z * Math.cos(a1) + u2z * Math.sin(a1)) * ringR;
+        sprayConePositions[vi++] = rcx + (u1x * Math.cos(a2) + u2x * Math.sin(a2)) * ringR;
+        sprayConePositions[vi++] = rcy + (u1y * Math.cos(a2) + u2y * Math.sin(a2)) * ringR;
+        sprayConePositions[vi++] = rcz + (u1z * Math.cos(a2) + u2z * Math.sin(a2)) * ringR;
+      }
+    }
+    // Longitudinal lines from nozzle opening to outer edge
+    for (let s = 0; s < CONE_SEGMENTS; s++) {
+      const a = (s / CONE_SEGMENTS) * Math.PI * 2;
+      const cosA = Math.cos(a), sinA = Math.sin(a);
+      sprayConePositions[vi++] = nx + (u1x * cosA + u2x * sinA) * NOZZLE_RADIUS;
+      sprayConePositions[vi++] = ny + (u1y * cosA + u2y * sinA) * NOZZLE_RADIUS;
+      sprayConePositions[vi++] = nz + (u1z * cosA + u2z * sinA) * NOZZLE_RADIUS;
+      sprayConePositions[vi++] = tx + (u1x * cosA + u2x * sinA) * discRadius;
+      sprayConePositions[vi++] = ty + (u1y * cosA + u2y * sinA) * discRadius;
+      sprayConePositions[vi++] = tz + (u1z * cosA + u2z * sinA) * discRadius;
+    }
+    while (vi < sprayConePositions.length) sprayConePositions[vi++] = 0;
+    sprayCone.geometry.attributes.position.needsUpdate = true;
+    sprayCone.geometry.computeBoundingSphere();
+    sprayCone.visible = true;
+  }
 
   // --- Hose barrel: position from grip to nozzle tip ---
   if (hoseBarrel) {
@@ -433,5 +514,6 @@ export function getSprayInfo() { return _lastSprayInfo; }
 export function hideWaterSpray() {
   if (sprayIndicator) sprayIndicator.visible = false;
   if (hoseBarrel) hoseBarrel.visible = false;
+  if (sprayCone) sprayCone.visible = false;
   _lastSprayInfo = null;
 }
