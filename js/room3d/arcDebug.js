@@ -212,11 +212,13 @@ export function updateArcDebug(playerPos, hit, sprayPSI) {
     const halfAngleRad = halfAngleDeg * Math.PI / 180;
 
     let vi = 0; // vertex index into conePositions
-    // Rings along the cone
+    const NOZZLE_R = 0.073; // ft — 1.75" nozzle opening radius
+    // Rings along the cone — radius interpolates from nozzle to full cone spread
     for (let r = 1; r <= CONE_RINGS; r++) {
       const frac = r / CONE_RINGS;
       const dist = beamLen * frac;
-      const ringR = dist * Math.tan(halfAngleRad);
+      const coneR = dist * Math.tan(halfAngleRad);
+      const ringR = NOZZLE_R + (coneR - NOZZLE_R) * frac;
       // Center of ring along beam
       const rcx = nozzle.x + bdx * dist;
       const rcy = nozzle.y + bdy * dist;
@@ -237,16 +239,17 @@ export function updateArcDebug(playerPos, hit, sprayPSI) {
         conePositions[vi++] = rcz + (u1z * cos2 + u2z * sin2) * ringR;
       }
     }
-    // Longitudinal lines from nozzle to outer ring
+    // Longitudinal lines from nozzle opening (1.75" diameter) to outer ring
+    const NOZZLE_RADIUS = 0.073; // ft — 1.75" diameter / 2
     const outerR = beamLen * Math.tan(halfAngleRad);
     const ocx = target.x, ocy = target.y, ocz = target.z;
     for (let s = 0; s < CONE_SEGMENTS; s++) {
       const a = (s / CONE_SEGMENTS) * Math.PI * 2;
       const cosA = Math.cos(a), sinA = Math.sin(a);
-      // Nozzle point
-      conePositions[vi++] = nozzle.x;
-      conePositions[vi++] = nozzle.y;
-      conePositions[vi++] = nozzle.z;
+      // Nozzle opening point (small circle at nozzle tip)
+      conePositions[vi++] = nozzle.x + (u1x * cosA + u2x * sinA) * NOZZLE_RADIUS;
+      conePositions[vi++] = nozzle.y + (u1y * cosA + u2y * sinA) * NOZZLE_RADIUS;
+      conePositions[vi++] = nozzle.z + (u1z * cosA + u2z * sinA) * NOZZLE_RADIUS;
       // Outer ring point
       conePositions[vi++] = ocx + (u1x * cosA + u2x * sinA) * outerR;
       conePositions[vi++] = ocy + (u1y * cosA + u2y * sinA) * outerR;
