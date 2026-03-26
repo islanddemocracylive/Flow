@@ -258,7 +258,8 @@ export class FireSimulation {
     // The splash minimum ensures even close-range perpendicular hits show a
     // meaningful wetted area from the high-velocity impact.
     const NOZZLE_R = 0.042;  // ft — 1" diameter / 2 (standard combo nozzle)
-    const MIN_SPLASH_R = 0.5; // ft — minimum wetted radius from splash on impact
+    // Splash minimum scales with pattern width — fog patterns splash wider
+    const MIN_SPLASH_R = 0.5 * (this.waterRadius / 2); // 0.5 ft at default, 1.0 ft at max fog
     const BASE_HALF_ANGLE_DEG = 5.0; // degrees, straight stream
     const halfAngleDeg = BASE_HALF_ANGLE_DEG * (this.waterRadius / 2) * Math.sqrt(100 / this.sprayPSI);
     const tanAlpha = Math.tan(halfAngleDeg * Math.PI / 180);
