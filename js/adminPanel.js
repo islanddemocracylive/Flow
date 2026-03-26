@@ -89,7 +89,7 @@ export function setupAdminPanel(sim, state, net) {
           sim.loadScenarioData(data);
           syncSliders(sim);
           state.playing = false;
-          updatePlayStopButtons();
+          updatePlayButton();
         }
       }
     });
@@ -174,11 +174,16 @@ export function setupAdminPanel(sim, state, net) {
     update();
   }
 
-  bindSlider('spread-speed', 'spread-speed-val', 'spreadSpeed');
-  bindSlider('ignition-threshold', 'ignition-threshold-val', 'ignitionThreshold');
+  // Growth rate slider — display as category label
+  function growthLabel(v) {
+    if (v <= 0.006) return 'Slow';
+    if (v <= 0.025) return 'Medium';
+    if (v <= 0.1) return 'Fast';
+    return 'Ultra-fast';
+  }
+  bindSlider('growth-alpha', 'growth-alpha-val', 'growthAlpha', growthLabel);
   bindSlider('water-radius', 'water-radius-val', 'waterRadius');
   bindSlider('spray-psi', 'spray-psi-val', 'sprayPSI');
-  bindSlider('vent-strength', 'vent-strength-val', 'ventStrength', v => v.toFixed(1));
 
   // GPM readout: updates whenever PSI slider changes
   function updateGPMDisplay() {
@@ -191,11 +196,9 @@ export function setupAdminPanel(sim, state, net) {
 
   function syncSliders(sim) {
     const pairs = [
-      ['spread-speed', 'spread-speed-val', 'spreadSpeed', null],
-      ['ignition-threshold', 'ignition-threshold-val', 'ignitionThreshold', null],
+      ['growth-alpha', 'growth-alpha-val', 'growthAlpha', growthLabel],
       ['water-radius', 'water-radius-val', 'waterRadius', null],
       ['spray-psi', 'spray-psi-val', 'sprayPSI', null],
-      ['vent-strength', 'vent-strength-val', 'ventStrength', v => v.toFixed(1)],
     ];
     for (const [sliderId, displayId, prop, format] of pairs) {
       const slider = document.getElementById(sliderId);

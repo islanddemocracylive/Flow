@@ -16,53 +16,141 @@
     }
     #status.connected { color: #4a4; }
 
-    /* D-pad */
-    .dpad {
+    /* Show touch controls only on narrow screens (mobile/tablet) */
+    .joystick-zone, .spray-btn, #crosshair { display: none !important; }
+    @media (max-width: 1024px) {
+      .joystick-zone { display: block !important; }
+      .spray-btn { display: flex !important; }
+      #crosshair { display: block !important; }
+    }
+
+    /* Joystick zones */
+    .joystick-zone {
       position: absolute;
       bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-      right: calc(20px + env(safe-area-inset-right, 0px));
-      width: 120px;
-      height: 120px;
+      width: 100px;
+      height: 100px;
       z-index: 50;
-      pointer-events: none;
       user-select: none;
       -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;
     }
-    .dpad-btn {
+    #joystick-left {
+      left: calc(20px + env(safe-area-inset-left, 0px));
+    }
+    #joystick-right {
+      right: calc(20px + env(safe-area-inset-right, 0px));
+    }
+    .joystick-ring {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.25);
+      background: rgba(255, 255, 255, 0.06);
+      position: relative;
+    }
+    .joystick-thumb {
       position: absolute;
-      width: 38px;
-      height: 38px;
-      border-radius: 6px;
-      background: rgba(255, 255, 255, 0.12);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: rgba(255, 255, 255, 0.6);
-      font-size: 14px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+
+    /* Spray buttons — flanking the joysticks */
+    .spray-btn {
+      position: absolute;
+      bottom: calc(42px + env(safe-area-inset-bottom, 0px));
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      background: rgba(68, 170, 255, 0.2);
+      border: 2px solid rgba(68, 170, 255, 0.4);
+      color: rgba(200, 230, 255, 0.8);
+      font: bold 10px/1 sans-serif;
       cursor: pointer;
-      pointer-events: auto;
+      z-index: 50;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: background 0.1s;
+      user-select: none;
+      -webkit-user-select: none;
       -webkit-tap-highlight-color: transparent;
+      touch-action: none;
     }
-    .dpad-btn:hover { background: rgba(255, 255, 255, 0.2); }
-    .dpad-btn:active { background: rgba(255, 107, 53, 0.5); border-color: rgba(255, 107, 53, 0.6); }
-    .dpad-up    { top: 0;   left: 50%; transform: translateX(-50%); }
-    .dpad-down  { bottom: 0; left: 50%; transform: translateX(-50%); }
-    .dpad-left  { top: 50%; left: 0;   transform: translateY(-50%); }
-    .dpad-right { top: 50%; right: 0;  transform: translateY(-50%); }
+    #spray-btn-left {
+      left: calc(130px + env(safe-area-inset-left, 0px));
+    }
+    #spray-btn-right {
+      right: calc(130px + env(safe-area-inset-right, 0px));
+    }
+    .spray-btn:active, .spray-btn.active {
+      background: rgba(68, 170, 255, 0.5);
+      border-color: rgba(100, 200, 255, 0.7);
+    }
+
+    /* Crosshair */
+    #crosshair {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 20px; height: 20px;
+      pointer-events: none;
+      z-index: 40;
+    }
+    #crosshair::before, #crosshair::after {
+      content: '';
+      position: absolute;
+      background: rgba(255,255,255,0.4);
+    }
+    #crosshair::before { top: 50%; left: 0; right: 0; height: 1px; transform: translateY(-50%); }
+    #crosshair::after  { left: 50%; top: 0; bottom: 0; width: 1px; transform: translateX(-50%); }
   </style>
 </head>
 <body>
   <div id="room3d-container">
-    <div id="dpad" class="dpad">
-      <button id="dpad-up" class="dpad-btn dpad-up" aria-label="Move forward">&#9650;</button>
-      <button id="dpad-left" class="dpad-btn dpad-left" aria-label="Strafe left">&#9664;</button>
-      <button id="dpad-down" class="dpad-btn dpad-down" aria-label="Move backward">&#9660;</button>
-      <button id="dpad-right" class="dpad-btn dpad-right" aria-label="Strafe right">&#9654;</button>
+    <div id="crosshair"></div>
+
+    <!-- Left joystick (movement) -->
+    <div id="joystick-left" class="joystick-zone">
+      <div class="joystick-ring"><div class="joystick-thumb"></div></div>
+    </div>
+
+    <!-- Spray buttons flanking joysticks -->
+    <button id="spray-btn-left" class="spray-btn" aria-label="Spray water">SPRAY</button>
+    <button id="spray-btn-right" class="spray-btn" aria-label="Spray water">SPRAY</button>
+
+    <!-- Right joystick (look/aim) -->
+    <div id="joystick-right" class="joystick-zone">
+      <div class="joystick-ring"><div class="joystick-thumb"></div></div>
     </div>
   </div>
   <div id="status">Connecting...</div>
+
+  <!-- Firefighter HUD overlay -->
+  <div id="viewer-hud" style="
+    position: fixed; top: 12px; left: 16px; z-index: 10;
+    font: bold 13px/1.6 monospace; user-select: none; pointer-events: none;
+  ">
+    <div id="hud-gas" style="color: #aaa;">Gas: --</div>
+    <div id="hud-hrr" style="color: rgba(255,180,80,0.8);">HRR: --</div>
+    <div id="hud-o2" style="color: rgba(100,200,100,0.8);">O&#8322;: --</div>
+    <div id="hud-vent" style="color: rgba(100,150,255,0.8); display:none;">VENT LIMITED</div>
+  </div>
+
+  <!-- Win/lose overlay -->
+  <div id="viewer-endstate" style="
+    position: fixed; inset: 0; z-index: 20;
+    display: none; align-items: center; justify-content: center;
+    font: bold 36px/1 sans-serif; text-align: center;
+    pointer-events: none;
+  "></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script type="module" src="js/viewer-app.js"></script>

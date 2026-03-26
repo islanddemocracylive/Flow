@@ -49,9 +49,28 @@ export class SimNetwork {
     };
   }
 
-  sendHeat(float32Array) {
+  sendHeat(float32Array, simState) {
     if (this.connected && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(float32Array.buffer);
+      if (!simState) { this.ws.send(float32Array.buffer); return; }
+      const n = float32Array.length; // number of cells (heat values)
+      // Layout: [heat × n] [metadata × 4] [cellState × n] [heatExposure × n]
+      const meta = 4;
+      const combined = new Float32Array(n + meta + n + n);
+      combined.set(float32Array);
+      const base = n;
+      combined[base] = simState.gasLayerTemp || 0;
+      combined[base + 1] = simState.oxygenLevel || 20.9;
+      const gsMap = { idle: 0, running: 0, win: 1, lose_flashover: 2, lose_oxygen: 3 };
+      combined[base + 2] = gsMap[simState.gameState] || 0;
+      combined[base + 3] = simState.totalHRR || 0;
+      // Append cellState and heatExposure as floats
+      const csBase = base + meta;
+      const exBase = csBase + n;
+      for (let i = 0; i < n; i++) {
+        combined[csBase + i] = simState.cellState ? simState.cellState[i] : 0;
+        combined[exBase + i] = simState.heatExposure ? simState.heatExposure[i] : 0;
+      }
+      this.ws.send(combined.buffer);
     }
   }
 

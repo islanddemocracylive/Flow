@@ -10,7 +10,7 @@
  *   - Design mode indicator
  */
 
-import { heatToRGB } from './colorUtils.js';
+import { cellToRGB, gasLayerColor } from './colorUtils.js';
 
 const canvas = document.getElementById('simulation-canvas');
 const ctx = canvas ? canvas.getContext('2d') : null;
@@ -67,13 +67,12 @@ export function render2D(sim, state) {
       const py0 = offsetY + Math.floor(gy * cellSize);
       const ps = Math.floor(cellSize);
 
-      // Base cell color
-      let r, g, b;
-      if (heat > 0) {
-        ({ r, g, b } = heatToRGB(heat));
-      } else {
-        r = 18; g = 18; b = 26;
-      }
+      // State-aware cell color
+      const idx = sim.idx(gx, gy);
+      const state = sim.cellState ? sim.cellState[idx] : (heat > 0 ? 2 : 0);
+      const exposureNorm = sim.heatExposure ? sim.heatExposure[idx] / 20 : 0; // 20 kJ threshold
+      const moisture = sim.moisture ? sim.moisture[idx] : 0;
+      const { r, g, b } = cellToRGB(state, heat, exposureNorm, moisture);
 
       ctx.fillStyle = `rgb(${r},${g},${b})`;
       ctx.fillRect(px0, py0, ps, ps);
@@ -133,6 +132,69 @@ export function render2D(sim, state) {
     }
   }
 
+  // Gas layer overlay (smoke / flashover visual)
+  if (sim.gasLayerTemp > 100) {
+    const gl = gasLayerColor(sim.gasLayerTemp);
+    if (gl.a > 0) {
+      ctx.fillStyle = `rgba(${gl.r},${gl.g},${gl.b},${gl.a})`;
+      ctx.fillRect(offsetX, offsetY, gridW, gridH);
+    }
+  }
+
+  // Gas layer HUD (top-right of grid)
+  if (state.playing) {
+    const hudX = offsetX + gridW - 8;
+    const hudY = offsetY + 16;
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+
+    // Gas layer temp
+    const temp = Math.round(sim.gasLayerTemp);
+    const gl = gasLayerColor(sim.gasLayerTemp);
+    const tempColor = temp > 500 ? `rgb(${gl.r},${gl.g},${gl.b})`
+      : temp > 300 ? 'rgba(255,200,100,0.9)'
+      : 'rgba(200,200,200,0.7)';
+    ctx.fillStyle = tempColor;
+    ctx.fillText(`Gas: ${temp}°C`, hudX, hudY);
+
+    // HRR
+    const hrr = sim.totalHRR / 1000;
+    ctx.fillStyle = 'rgba(255,180,80,0.7)';
+    ctx.fillText(`HRR: ${hrr.toFixed(1)} MW`, hudX, hudY + 16);
+
+    // O₂ level
+    const o2 = sim.oxygenLevel;
+    const o2Color = o2 > 18 ? 'rgba(100,200,100,0.7)'
+      : o2 > 15 ? 'rgba(255,200,80,0.9)'
+      : 'rgba(255,80,60,0.9)';
+    ctx.fillStyle = o2Color;
+    ctx.fillText(`O\u2082: ${o2.toFixed(1)}%`, hudX, hudY + 32);
+
+    // Vent-limited indicator
+    if (sim.ventLimited) {
+      ctx.fillStyle = 'rgba(100,150,255,0.8)';
+      ctx.fillText('VENT LIMITED', hudX, hudY + 48);
+    }
+  }
+
+  // Win/lose overlay
+  if (sim.gameState === 'win' || sim.gameState === 'lose_flashover' || sim.gameState === 'lose_oxygen') {
+    const overlays = {
+      win: { text: 'FIRE SUPPRESSED', color: 'rgba(40,180,60,0.85)', bg: 'rgba(0,40,0,0.4)' },
+      lose_flashover: { text: 'FLASHOVER', color: 'rgba(255,80,20,0.95)', bg: 'rgba(60,10,0,0.5)' },
+      lose_oxygen: { text: 'OXYGEN DEPLETED', color: 'rgba(100,160,255,0.95)', bg: 'rgba(0,10,40,0.5)' },
+    };
+    const o = overlays[sim.gameState];
+    ctx.fillStyle = o.bg;
+    ctx.fillRect(offsetX, offsetY, gridW, gridH);
+    ctx.font = `bold ${Math.max(20, gridW * 0.06)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = o.color;
+    ctx.fillText(o.text, offsetX + gridW / 2, offsetY + gridH / 2);
+  }
+
   // Airflow arrows
   if (sim.vents.length > 0) {
     ctx.fillStyle = 'rgba(100, 180, 255, 0.4)';
@@ -142,12 +204,11 @@ export function render2D(sim, state) {
       for (let gx = 0; gx < sim.cols; gx += 2) {
         const af = sim.getAirflow(gx, gy);
         const mag = Math.sqrt(af.vx * af.vx + af.vy * af.vy);
-        const effectiveMag = mag * sim.ventStrength;
-        if (effectiveMag < 0.03) continue;
+        if (mag < 0.03) continue;
 
         const cx = offsetX + (gx + 1) * cellSize;
         const cy = offsetY + (gy + 1) * cellSize;
-        const len = cellSize * 0.6 * Math.min(effectiveMag, 1);
+        const len = cellSize * 0.6 * Math.min(mag, 1);
 
         const angle = Math.atan2(af.vy, af.vx);
         const ex = cx + Math.cos(angle) * len;

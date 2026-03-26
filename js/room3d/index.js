@@ -6,8 +6,9 @@
  */
 
 import { ROOM_W, ROOM_D, ROOM_H, DOOR_H } from '../constants.js';
-import { heatToColor } from '../colorUtils.js';
-import { container, scene, camera, renderer, fireLight } from './scene.js';
+import { cellToColor } from '../colorUtils.js';
+import { container, scene, camera, renderer, fireLight, gasLayerPlane } from './scene.js';
+import { FLASHOVER_TEMP, AMBIENT_TEMP } from '../constants.js';
 import { buildWalls, wallGroup, doorFrameGroup } from './walls.js';
 import { panelMeshes } from './ceiling.js';
 import { buildVentMeshes } from './vents.js';
@@ -69,6 +70,7 @@ const room3d = {
     buildStartMarkers(sim);
 
     let totalGlow = 0;
+    let fireCX = 0, fireCZ = 0, fireWeight = 0;
 
     for (let i = 0; i < panelMeshes.length; i++) {
       const { mesh, col, row } = panelMeshes[i];
@@ -79,21 +81,71 @@ const room3d = {
         mesh.material.opacity = 0.3;
         mesh.material.transparent = true;
       } else {
-        const color = heatToColor(heat);
+        const idx = sim.idx(col, row);
+        const state = sim.cellState ? sim.cellState[idx] : (heat > 0 ? 2 : 0);
+        const exposureNorm = sim.heatExposure ? sim.heatExposure[idx] / 20 : 0;
+        const moisture = sim.moisture ? sim.moisture[idx] : 0;
+        const color = cellToColor(state, heat, exposureNorm, moisture);
         mesh.material.color.copy(color);
         mesh.material.opacity = 1;
         mesh.material.transparent = false;
       }
 
       totalGlow += heat;
+      if (heat > 0) {
+        fireCX += (col + 0.5) * heat;
+        fireCZ += (row + 0.5) * heat;
+        fireWeight += heat;
+      }
     }
 
-
-    // Update dynamic fire light
+    // Update dynamic fire light — track fire centroid
     if (fireLight) {
       const avgHeat = totalGlow / panelMeshes.length;
       fireLight.intensity = avgHeat * 3;
       fireLight.color.setHSL(0.05, 1, 0.5 + avgHeat * 0.3);
+      if (fireWeight > 0) {
+        fireLight.position.x = fireCX / fireWeight;
+        fireLight.position.z = fireCZ / fireWeight;
+      }
+    }
+
+    // Update gas layer plane (descending smoke sheet)
+    if (gasLayerPlane) {
+      const temp = sim.gasLayerTemp || AMBIENT_TEMP;
+      if (temp < 100) {
+        gasLayerPlane.material.opacity = 0;
+        gasLayerPlane.visible = false;
+      } else {
+        gasLayerPlane.visible = true;
+        // Opacity: 0 at 100°C → 0.5 at 600°C+
+        const tNorm = Math.min(1, (temp - 100) / 500);
+        gasLayerPlane.material.opacity = tNorm * 0.5;
+
+        // Y position: gas layer hugs the ceiling during early growth, then
+        // drops rapidly in the danger zone (400°C+). Uses a quadratic curve
+        // so the layer barely descends until temps are high.
+        // At flashover (600°C): layer is at ~55% of room height (~5 ft),
+        // just below eye level. Post-flashover it can drop further.
+        const yTop = ROOM_H;
+        const yBottom = ROOM_H * 0.55; // ~5 ft — just below eye level at flashover
+        const dropFraction = tNorm * tNorm; // quadratic: slow start, fast near flashover
+        gasLayerPlane.position.y = yTop - dropFraction * (yTop - yBottom);
+
+        // Color: gray → brown → orange → red
+        if (temp < 300) {
+          gasLayerPlane.material.color.setRGB(0.5, 0.5, 0.5);
+        } else if (temp < 500) {
+          const t2 = (temp - 300) / 200;
+          gasLayerPlane.material.color.setRGB(0.5 + t2 * 0.05, 0.5 - t2 * 0.03, 0.5 - t2 * 0.15);
+        } else if (temp < FLASHOVER_TEMP) {
+          const t2 = (temp - 500) / 100;
+          gasLayerPlane.material.color.setRGB(0.55 + t2 * 0.15, 0.47 - t2 * 0.08, 0.35 - t2 * 0.2);
+        } else {
+          const t2 = Math.min(1, (temp - FLASHOVER_TEMP) / 200);
+          gasLayerPlane.material.color.setRGB(0.7 + t2 * 0.16, 0.39 - t2 * 0.08, 0.15 - t2 * 0.08);
+        }
+      }
     }
   },
 
