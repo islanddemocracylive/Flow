@@ -345,7 +345,7 @@ export function getPlayerPosition() {
 const NOZZLE_ARM_LENGTH = 1.5; // ft from shoulder pivot to nozzle tip
 const SHOULDER_DROP = 0.5;     // ft below eye level to shoulder pivot
 const NOZZLE_Y_MIN = -2.0;    // max drop below shoulder (hip level)
-const NOZZLE_Y_MAX = 1.0;     // max rise above shoulder (overhead)
+const NOZZLE_Y_MAX = 0.3;     // max rise above shoulder — keeps nozzle near chest/face level
 
 export function getNozzlePosition(targetX, targetY, targetZ) {
   if (!fpPosition) return { x: 0, y: EYE_HEIGHT - SHOULDER_DROP, z: 0 };

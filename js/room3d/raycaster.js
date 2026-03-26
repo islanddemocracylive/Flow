@@ -436,10 +436,9 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
   sprayMat.opacity = 0.5;
   sprayIndicator.visible = true;
 
-  // --- Spray cone wireframe (short, near nozzle only) ---
+  // --- Spray cone wireframe (full length from nozzle to target) ---
   if (sprayCone && sprayConePositions) {
-    const CONE_MAX_LEN = 3.0; // ft — only show first 3 ft of cone
-    const coneLen = Math.min(bLen, CONE_MAX_LEN);
+    const coneLen = bLen;
 
     // Piecewise spread model matching simulation: coherent core, then 4° expansion
     const BREAKUP = 5.0; // ft — coherent core length
