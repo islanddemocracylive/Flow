@@ -80,7 +80,8 @@ let sprayX = 0;  // screen coords for spray target
 let sprayY = 0;
 
 const room3dContainer = document.getElementById('room3d-container');
-const sprayBtn = document.getElementById('spray-btn');
+const sprayBtnLeft = document.getElementById('spray-btn-left');
+const sprayBtnRight = document.getElementById('spray-btn-right');
 
 if (room3dContainer) {
   room3dContainer.addEventListener('contextmenu', e => e.preventDefault());
@@ -110,14 +111,14 @@ if (room3dContainer) {
   });
 }
 
-// Mobile: spray button targets screen center (crosshair)
-if (sprayBtn) {
+// Mobile: spray buttons target screen center (crosshair)
+function setupSprayButton(btn) {
+  if (!btn) return;
   function startSpray(e) {
     e.preventDefault();
     e.stopPropagation();
     spraying = true;
-    sprayBtn.classList.add('active');
-    // Target screen center
+    btn.classList.add('active');
     const rect = room3dContainer.getBoundingClientRect();
     sprayX = rect.left + rect.width / 2;
     sprayY = rect.top + rect.height / 2;
@@ -126,23 +127,30 @@ if (sprayBtn) {
     e.preventDefault();
     e.stopPropagation();
     spraying = false;
-    sprayBtn.classList.remove('active');
+    btn.classList.remove('active');
+    sprayBtnLeft?.classList.remove('active');
+    sprayBtnRight?.classList.remove('active');
     room3d.hideWaterSpray();
     clearSprayScreenPosition();
   }
-  sprayBtn.addEventListener('mousedown', startSpray);
-  sprayBtn.addEventListener('mouseup', stopSpray);
-  sprayBtn.addEventListener('mouseleave', stopSpray);
-  sprayBtn.addEventListener('touchstart', startSpray, { passive: false });
-  sprayBtn.addEventListener('touchend', stopSpray, { passive: false });
-  sprayBtn.addEventListener('touchcancel', stopSpray, { passive: false });
+  btn.addEventListener('mousedown', startSpray);
+  btn.addEventListener('mouseup', stopSpray);
+  btn.addEventListener('mouseleave', stopSpray);
+  btn.addEventListener('touchstart', startSpray, { passive: false });
+  btn.addEventListener('touchend', stopSpray, { passive: false });
+  btn.addEventListener('touchcancel', stopSpray, { passive: false });
 }
+setupSprayButton(sprayBtnLeft);
+setupSprayButton(sprayBtnRight);
 
 // Render loop
 function loop() {
   if (room3d.available) {
     // When spray button is held on mobile, keep targeting screen center
-    if (spraying && sprayBtn && sprayBtn.classList.contains('active')) {
+    if (spraying && (
+      (sprayBtnLeft && sprayBtnLeft.classList.contains('active')) ||
+      (sprayBtnRight && sprayBtnRight.classList.contains('active'))
+    )) {
       const rect = room3dContainer.getBoundingClientRect();
       sprayX = rect.left + rect.width / 2;
       sprayY = rect.top + rect.height / 2;
@@ -156,7 +164,7 @@ function loop() {
         const sprayParams = sim.getSprayParams(hit.worldX, hit.worldZ, playerPos);
         if (sprayParams) {
           net.sendWater(hit.worldX, hit.worldZ, playerPos);
-          room3d.showWaterSpray(hit.worldX, hit.worldZ, sprayParams);
+          room3d.showWaterSpray(hit.worldX, hit.worldZ, sprayParams, hit);
           const rect = room3dContainer.getBoundingClientRect();
           const ndcX = ((sprayX - rect.left) / rect.width) * 2 - 1;
           const ndcY = -((sprayY - rect.top) / rect.height) * 2 + 1;

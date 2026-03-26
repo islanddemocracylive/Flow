@@ -2,7 +2,7 @@
  * First-person camera controller.
  *
  * Desktop: WASD/Arrow keys to move, right-click drag to look.
- * Mobile: D-pad (bottom-left) to move, right-side touch-drag to look.
+ * Mobile: Left joystick to move, right joystick to look.
  * Camera always at eye level (5.5ft), anchored to ground.
  *
  * Must call enableFPCamera() to activate — starts disabled so the admin
@@ -18,6 +18,8 @@ const MOVE_SPEED = 5;           // ft/sec
 const LOOK_SENSITIVITY = 0.003; // radians/pixel
 const PITCH_LIMIT = Math.PI / 3; // 60° up/down
 const BOUNDS_MARGIN = 10;       // max distance outside room
+const JOYSTICK_RADIUS = 50;     // half of 100px ring — matches CSS
+const LOOK_JOYSTICK_SPEED = 2.0; // radians/sec at full deflection
 
 // Camera state
 let fpYaw = 0;
@@ -33,10 +35,14 @@ let lookDragging = false;
 let lookLastX = 0;
 let lookLastY = 0;
 
-// Touch look state — any single-finger touch on the right half of screen
-let touchLookId = -1;
-let touchLookLastX = 0;
-let touchLookLastY = 0;
+// Virtual joystick state
+let moveJoystickId = -1;
+let moveJoystickX = 0;   // -1..1 normalized
+let moveJoystickY = 0;
+
+let lookJoystickId = -1;
+let lookJoystickX = 0;
+let lookJoystickY = 0;
 
 // Clock for deltaTime
 const fpClock = typeof THREE !== 'undefined' ? new THREE.Clock() : null;
@@ -55,7 +61,7 @@ let sprayEdgeNdcY = 0;
 const EDGE_DEAD_ZONE = 0.4;
 const EDGE_TURN_SPEED = 1.0;
 
-// ── Event handler functions ──────────────────────────────
+// ── Keyboard handlers ────────────────────────────────────
 
 function onKeyDown(e) {
   const key = e.key;
@@ -69,6 +75,8 @@ function onKeyDown(e) {
 function onKeyUp(e) {
   keysPressed.delete(e.key.toLowerCase());
 }
+
+// ── Mouse handlers (desktop) ─────────────────────────────
 
 function onMouseDown(e) {
   if (e.button === 2) {
@@ -97,47 +105,72 @@ function onContextMenu(e) {
   e.preventDefault();
 }
 
-// Touch look: any finger on the right half of the screen (excluding spray button area)
-function isLookTouch(touch) {
-  return touch.clientX > window.innerWidth * 0.35;
-}
+// ── Virtual joystick setup ───────────────────────────────
 
-function onTouchStart(e) {
-  for (let i = 0; i < e.changedTouches.length; i++) {
-    const t = e.changedTouches[i];
-    if (touchLookId === -1 && isLookTouch(t)) {
-      // Check it's not on the spray button or dpad
-      const el = document.elementFromPoint(t.clientX, t.clientY);
-      if (el && (el.id === 'spray-btn' || el.classList.contains('dpad-btn'))) continue;
-      touchLookId = t.identifier;
-      touchLookLastX = t.clientX;
-      touchLookLastY = t.clientY;
+function setupJoystick(elementId, isMove) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  const thumb = el.querySelector('.joystick-thumb');
+  const ring = el.querySelector('.joystick-ring');
+
+  function getCenter() {
+    const rect = ring.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }
+
+  el.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const t = e.changedTouches[0];
+    if (isMove && moveJoystickId === -1) {
+      moveJoystickId = t.identifier;
+    } else if (!isMove && lookJoystickId === -1) {
+      lookJoystickId = t.identifier;
+    }
+  }, { passive: false });
+
+  // Track on document so finger can slide outside the joystick element
+  document.addEventListener('touchmove', (e) => {
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      const activeId = isMove ? moveJoystickId : lookJoystickId;
+      if (t.identifier !== activeId) continue;
+
+      const center = getCenter();
+      let dx = t.clientX - center.x;
+      let dy = t.clientY - center.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const clamped = Math.min(dist, JOYSTICK_RADIUS);
+      if (dist > 0) { dx = (dx / dist) * clamped; dy = (dy / dist) * clamped; }
+      const normX = dx / JOYSTICK_RADIUS;
+      const normY = dy / JOYSTICK_RADIUS;
+
+      if (isMove) { moveJoystickX = normX; moveJoystickY = normY; }
+      else { lookJoystickX = normX; lookJoystickY = normY; }
+
+      if (thumb) {
+        thumb.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+      }
+    }
+  }, { passive: true });
+
+  function endTouch(e) {
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (isMove && t.identifier === moveJoystickId) {
+        moveJoystickId = -1; moveJoystickX = 0; moveJoystickY = 0;
+      } else if (!isMove && t.identifier === lookJoystickId) {
+        lookJoystickId = -1; lookJoystickX = 0; lookJoystickY = 0;
+      }
+      if (thumb) thumb.style.transform = 'translate(-50%, -50%)';
     }
   }
+  document.addEventListener('touchend', endTouch, { passive: true });
+  document.addEventListener('touchcancel', endTouch, { passive: true });
 }
 
-function onTouchMove(e) {
-  for (let i = 0; i < e.changedTouches.length; i++) {
-    const t = e.changedTouches[i];
-    if (t.identifier === touchLookId) {
-      const dx = t.clientX - touchLookLastX;
-      const dy = t.clientY - touchLookLastY;
-      touchLookLastX = t.clientX;
-      touchLookLastY = t.clientY;
-      fpYaw += dx * LOOK_SENSITIVITY;
-      fpPitch += dy * LOOK_SENSITIVITY;
-      fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
-    }
-  }
-}
-
-function onTouchEnd(e) {
-  for (let i = 0; i < e.changedTouches.length; i++) {
-    if (e.changedTouches[i].identifier === touchLookId) {
-      touchLookId = -1;
-    }
-  }
-}
+setupJoystick('joystick-left', true);
+setupJoystick('joystick-right', false);
 
 // ── Enable / Disable ─────────────────────────────────────
 
@@ -151,11 +184,7 @@ export function enableFPCamera() {
   renderer.domElement.addEventListener('mousedown', onMouseDown);
   document.addEventListener('mousemove', onMouseMove);
   document.addEventListener('mouseup', onMouseUp);
-  renderer.domElement.addEventListener('touchstart', onTouchStart, { passive: true });
-  renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: true });
-  renderer.domElement.addEventListener('touchend', onTouchEnd, { passive: true });
 
-  // Reset clock so first getDelta isn't huge
   if (fpClock) fpClock.getDelta();
 }
 
@@ -164,7 +193,8 @@ export function disableFPCamera() {
   fpEnabled = false;
   keysPressed.clear();
   lookDragging = false;
-  touchLookId = -1;
+  moveJoystickId = -1; moveJoystickX = 0; moveJoystickY = 0;
+  lookJoystickId = -1; lookJoystickX = 0; lookJoystickY = 0;
 
   renderer.domElement.removeEventListener('contextmenu', onContextMenu);
   document.removeEventListener('keydown', onKeyDown);
@@ -172,40 +202,7 @@ export function disableFPCamera() {
   renderer.domElement.removeEventListener('mousedown', onMouseDown);
   document.removeEventListener('mousemove', onMouseMove);
   document.removeEventListener('mouseup', onMouseUp);
-  renderer.domElement.removeEventListener('touchstart', onTouchStart);
-  renderer.domElement.removeEventListener('touchmove', onTouchMove);
-  renderer.domElement.removeEventListener('touchend', onTouchEnd);
 }
-
-// ── On-screen D-pad support ──────────────────────────────────
-
-function setupDpadButton(id, key) {
-  const btn = document.getElementById(id);
-  if (!btn) return;
-
-  function startPress(e) {
-    e.preventDefault();
-    e.stopPropagation(); // prevent touch from reaching canvas look handler
-    keysPressed.add(key.toLowerCase());
-  }
-  function endPress(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    keysPressed.delete(key.toLowerCase());
-  }
-
-  btn.addEventListener('mousedown', startPress);
-  btn.addEventListener('mouseup', endPress);
-  btn.addEventListener('mouseleave', endPress);
-  btn.addEventListener('touchstart', startPress, { passive: false });
-  btn.addEventListener('touchend', endPress, { passive: false });
-  btn.addEventListener('touchcancel', endPress, { passive: false });
-}
-
-setupDpadButton('dpad-up', 'ArrowUp');
-setupDpadButton('dpad-down', 'ArrowDown');
-setupDpadButton('dpad-left', 'ArrowLeft');
-setupDpadButton('dpad-right', 'ArrowRight');
 
 // ── Starting position based on door placement ─────────────
 
@@ -256,16 +253,27 @@ export function updateCamera(sim) {
 
   const dt = fpClock.getDelta();
 
+  // Look joystick rotation
+  if (lookJoystickX !== 0 || lookJoystickY !== 0) {
+    fpYaw += lookJoystickX * LOOK_JOYSTICK_SPEED * dt;
+    fpPitch -= lookJoystickY * LOOK_JOYSTICK_SPEED * dt;
+    fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
+  }
+
   const forwardX = -Math.sin(fpYaw);
   const forwardZ = -Math.cos(fpYaw);
   const rightX = Math.cos(fpYaw);
   const rightZ = -Math.sin(fpYaw);
 
   let moveX = 0, moveZ = 0;
+  // Keyboard movement
   if (keysPressed.has('arrowup') || keysPressed.has('w'))    { moveX += forwardX; moveZ += forwardZ; }
   if (keysPressed.has('arrowdown') || keysPressed.has('s'))  { moveX -= forwardX; moveZ -= forwardZ; }
   if (keysPressed.has('arrowleft') || keysPressed.has('a'))  { moveX -= rightX;   moveZ -= rightZ;   }
   if (keysPressed.has('arrowright') || keysPressed.has('d')) { moveX += rightX;   moveZ += rightZ;   }
+  // Joystick movement (Y inverted: screen-down = backward)
+  moveX += forwardX * (-moveJoystickY) + rightX * moveJoystickX;
+  moveZ += forwardZ * (-moveJoystickY) + rightZ * moveJoystickX;
 
   const moveLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
   if (moveLen > 0) {
