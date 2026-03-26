@@ -130,10 +130,10 @@ let sprayCone = null;
 let sprayConePositions = null;
 const SPRAY_SEGMENTS = 48;
 const BARREL_LENGTH = 1.0;  // ft — visible nozzle barrel
-const BARREL_RADIUS = 0.073; // ft — 1.75 inch diameter (standard nozzle)
+const BARREL_RADIUS = 0.042; // ft — 1" diameter (standard combo nozzle)
 const CONE_RINGS = 8;
 const CONE_SEGMENTS = 24;
-const NOZZLE_RADIUS = 0.073; // ft — matches barrel
+const NOZZLE_RADIUS = 0.042; // ft — matches barrel (1" nozzle opening)
 
 if (scene) {
   // Spray disc with vertex colors for gradient (center bright, edges fade)

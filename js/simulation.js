@@ -259,7 +259,7 @@ export class FireSimulation {
     //  10 ft: ~1.4 ft radius
     // Model: radius = nozzleR + spreadK * distance²
     // spreadK scales with waterRadius (wider pattern) and inversely with PSI.
-    const NOZZLE_R = 0.073;  // ft — 1.75" diameter / 2
+    const NOZZLE_R = 0.042;  // ft — 1" diameter / 2 (standard combo nozzle straight stream)
     const baseSpreadK = 0.014; // ft/ft² at 100 PSI, waterRadius=2
     const spreadK = baseSpreadK * (this.waterRadius / 2) * Math.sqrt(100 / this.sprayPSI);
     const coneRadius = NOZZLE_R + spreadK * totalDist * totalDist;
