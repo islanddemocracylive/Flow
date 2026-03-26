@@ -164,7 +164,7 @@ export function disableFPCamera() {
   fpEnabled = false;
   keysPressed.clear();
   lookDragging = false;
-  touchLookActive = false;
+  touchLookId = -1;
 
   renderer.domElement.removeEventListener('contextmenu', onContextMenu);
   document.removeEventListener('keydown', onKeyDown);
@@ -185,11 +185,11 @@ function setupDpadButton(id, key) {
 
   function startPress(e) {
     e.preventDefault();
-    keysPressed.add(key);
+    keysPressed.add(key.toLowerCase());
   }
   function endPress(e) {
     e.preventDefault();
-    keysPressed.delete(key);
+    keysPressed.delete(key.toLowerCase());
   }
 
   btn.addEventListener('mousedown', startPress);
