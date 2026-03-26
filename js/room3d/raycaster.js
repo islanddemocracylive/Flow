@@ -436,22 +436,22 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
   sprayMat.opacity = 0.5;
   sprayIndicator.visible = true;
 
-  // --- Spray cone wireframe ---
+  // --- Spray cone wireframe (short, near nozzle only) ---
   if (sprayCone && sprayConePositions) {
-    // Reuse beam basis vectors (unit length, not scaled by discRadius)
+    const CONE_MAX_LEN = 3.0; // ft — only show first 3 ft of cone
+    const coneLen = Math.min(bLen, CONE_MAX_LEN);
+    const coneAngle = Math.atan2(discRadius, bLen); // full cone angle
+
+    // Unit basis vectors perpendicular to beam
     const u1x = ux / discRadius, u1y = uy / discRadius, u1z = uz / discRadius;
     const u2x = vx / discRadius, u2y = vy / discRadius, u2z = vz / discRadius;
-    const halfAngleDeg = 8 * (params.minorR > 0.5 ? 2 : 1) / 2 * Math.sqrt(100 / (params.strengthFactor > 0 ? 100 : 100));
-    // Compute actual cone angle from discRadius and beamLength
-    const coneAngle = Math.atan2(discRadius, bLen);
 
     let vi = 0;
-    // Rings
+    // Rings along the short cone
     for (let r = 1; r <= CONE_RINGS; r++) {
       const frac = r / CONE_RINGS;
-      const dist = bLen * frac;
-      const coneR = dist * Math.tan(coneAngle);
-      const ringR = NOZZLE_RADIUS + (coneR - NOZZLE_RADIUS) * frac;
+      const dist = coneLen * frac;
+      const ringR = NOZZLE_RADIUS + (dist * Math.tan(coneAngle) - NOZZLE_RADIUS) * frac;
       const rcx = nx + bx * dist, rcy = ny + by * dist, rcz = nz + bz * dist;
       for (let s = 0; s < CONE_SEGMENTS; s++) {
         const a1 = (s / CONE_SEGMENTS) * Math.PI * 2;
@@ -464,16 +464,18 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
         sprayConePositions[vi++] = rcz + (u1z * Math.cos(a2) + u2z * Math.sin(a2)) * ringR;
       }
     }
-    // Longitudinal lines from nozzle opening to outer edge
+    // Longitudinal lines from nozzle opening to end of short cone
+    const endR = NOZZLE_RADIUS + (coneLen * Math.tan(coneAngle) - NOZZLE_RADIUS);
+    const ex = nx + bx * coneLen, ey = ny + by * coneLen, ez = nz + bz * coneLen;
     for (let s = 0; s < CONE_SEGMENTS; s++) {
       const a = (s / CONE_SEGMENTS) * Math.PI * 2;
       const cosA = Math.cos(a), sinA = Math.sin(a);
       sprayConePositions[vi++] = nx + (u1x * cosA + u2x * sinA) * NOZZLE_RADIUS;
       sprayConePositions[vi++] = ny + (u1y * cosA + u2y * sinA) * NOZZLE_RADIUS;
       sprayConePositions[vi++] = nz + (u1z * cosA + u2z * sinA) * NOZZLE_RADIUS;
-      sprayConePositions[vi++] = tx + (u1x * cosA + u2x * sinA) * discRadius;
-      sprayConePositions[vi++] = ty + (u1y * cosA + u2y * sinA) * discRadius;
-      sprayConePositions[vi++] = tz + (u1z * cosA + u2z * sinA) * discRadius;
+      sprayConePositions[vi++] = ex + (u1x * cosA + u2x * sinA) * endR;
+      sprayConePositions[vi++] = ey + (u1y * cosA + u2y * sinA) * endR;
+      sprayConePositions[vi++] = ez + (u1z * cosA + u2z * sinA) * endR;
     }
     while (vi < sprayConePositions.length) sprayConePositions[vi++] = 0;
     sprayCone.geometry.attributes.position.needsUpdate = true;
