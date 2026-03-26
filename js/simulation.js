@@ -252,18 +252,20 @@ export class FireSimulation {
     const maxReach = 2.0 * Math.sqrt(this.sprayPSI);
     if (totalDist > maxReach) return null;
 
-    // Spray spread: cone from nozzle + splash radius at surface.
-    // The stream expands at ~5° half-angle from the nozzle tip.
-    // On impact, water splashes radially — even a tight stream creates a
-    // wetted area much larger than the stream cross-section. Minimum splash
-    // radius of 0.5 ft (~1 ft diameter) accounts for this.
-    // Validation: 3 ft→0.5 ft (splash floor), 10 ft→0.92 ft, 20 ft→1.8 ft
+    // Stream and splash radii:
+    // streamRadius: true cone geometry from nozzle (5° half-angle expansion)
+    // splashRadius: effective wetted area on surface (stream + radial splash)
+    // The splash minimum ensures even close-range perpendicular hits show a
+    // meaningful wetted area from the high-velocity impact.
     const NOZZLE_R = 0.042;  // ft — 1" diameter / 2 (standard combo nozzle)
     const MIN_SPLASH_R = 0.5; // ft — minimum wetted radius from splash on impact
     const BASE_HALF_ANGLE_DEG = 5.0; // degrees, straight stream
     const halfAngleDeg = BASE_HALF_ANGLE_DEG * (this.waterRadius / 2) * Math.sqrt(100 / this.sprayPSI);
     const tanAlpha = Math.tan(halfAngleDeg * Math.PI / 180);
-    const coneRadius = Math.max(MIN_SPLASH_R, NOZZLE_R + tanAlpha * totalDist);
+    const streamRadius = NOZZLE_R + tanAlpha * totalDist;
+    const splashRadius = Math.max(MIN_SPLASH_R, streamRadius);
+    // Use splashRadius for the surface footprint (suppression + visual disc)
+    const coneRadius = splashRadius;
 
     // Equivalent half-angle for the cone-surface intersection math
     const halfAngleRad = Math.atan2(coneRadius, totalDist);
@@ -295,7 +297,8 @@ export class FireSimulation {
 
     return {
       majorR,
-      minorR,
+      minorR,         // splash radius (for disc visual + suppression)
+      streamRadius,   // true cone radius (for cone wireframe visual)
       sprayAngle,
       strengthFactor,
       centerOffset,

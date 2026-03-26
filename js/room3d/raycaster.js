@@ -440,11 +440,12 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
   if (sprayCone && sprayConePositions) {
     const coneLen = bLen;
 
-    // Interpolate from nozzle opening to discRadius (which matches the projected disc).
-    // discRadius comes from params.minorR via getSprayParams piecewise model.
+    // Cone shows the true stream geometry (no splash inflation).
+    // Interpolate from nozzle opening to streamRadius at the target.
+    const streamR = (params.streamRadius != null) ? params.streamRadius : discRadius;
     const _coneR = (d) => {
       const frac = coneLen > 0.01 ? d / coneLen : 0;
-      return NOZZLE_RADIUS + (discRadius - NOZZLE_RADIUS) * frac;
+      return NOZZLE_RADIUS + (streamR - NOZZLE_RADIUS) * frac;
     };
 
     // Unit basis vectors perpendicular to beam
