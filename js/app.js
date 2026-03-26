@@ -285,6 +285,8 @@ function loop(now) {
 
   if (state.playing && !state.paused) {
     sim.step(dt);
+    // Periodic snapshot for rewind support
+    if (window._flowStateSnapshot) window._flowStateSnapshot();
   }
 
   // Apply remote water sprays from viewer clients (server owns the sim clock)

@@ -113,6 +113,20 @@ header h1 {
   background: #a33;
 }
 
+.header-btn.time-btn {
+  background: #2a3a5a;
+  border-color: #4a6a9a;
+  font-size: 11px;
+  padding: 4px 8px;
+}
+.header-btn.time-btn:hover:not(:disabled) {
+  background: #3a4a6a;
+}
+.header-btn.time-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 #main-container {
   display: flex;
   flex: 1;

@@ -158,6 +158,89 @@ export function setupAdminPanel(sim, state, net) {
 
   updatePlayButton();
 
+  // ── Rewind / Fast-forward ─────────────────────────────────
+
+  const btnRewind = document.getElementById('btn-rewind');
+  const btnFfwd = document.getElementById('btn-ffwd');
+  const SKIP_SECONDS = 30;
+  const SNAPSHOT_INTERVAL = 5;  // save snapshot every 5 sim-seconds
+  const MAX_SNAPSHOTS = 120;    // keep up to 10 minutes of history
+  const snapshots = [];
+  let lastSnapshotTime = -Infinity;
+
+  function updateTimeButtons() {
+    if (btnRewind) btnRewind.disabled = !state.playing || snapshots.length === 0;
+    if (btnFfwd) btnFfwd.disabled = !state.playing;
+  }
+
+  /** Called from the main loop to periodically save snapshots */
+  function maybeTakeSnapshot() {
+    if (!state.playing || state.paused) return;
+    if (sim.simTime - lastSnapshotTime >= SNAPSHOT_INTERVAL) {
+      snapshots.push(sim.takeSnapshot());
+      if (snapshots.length > MAX_SNAPSHOTS) snapshots.shift();
+      lastSnapshotTime = sim.simTime;
+      updateTimeButtons();
+    }
+  }
+
+  if (btnRewind) btnRewind.addEventListener('click', () => {
+    if (!state.playing || snapshots.length === 0) return;
+    // Find the snapshot closest to 30s ago
+    const targetTime = sim.simTime - SKIP_SECONDS;
+    let best = snapshots[0];
+    for (const snap of snapshots) {
+      if (snap.simTime <= targetTime) best = snap;
+    }
+    sim.restoreSnapshot(best);
+    // Remove snapshots newer than the restored time
+    while (snapshots.length > 0 && snapshots[snapshots.length - 1].simTime > best.simTime) {
+      snapshots.pop();
+    }
+    lastSnapshotTime = sim.simTime;
+    updateTimeButtons();
+    if (net && net.connected) net.sendState(sim);
+  });
+
+  if (btnFfwd) btnFfwd.addEventListener('click', () => {
+    if (!state.playing) return;
+    // Take a snapshot before fast-forwarding so we can rewind back
+    snapshots.push(sim.takeSnapshot());
+    if (snapshots.length > MAX_SNAPSHOTS) snapshots.shift();
+    sim.fastForward(SKIP_SECONDS);
+    lastSnapshotTime = sim.simTime;
+    updateTimeButtons();
+    if (net && net.connected) net.sendState(sim);
+  });
+
+  // Expose snapshot-taking for the main loop
+  if (typeof window !== 'undefined') {
+    window._flowStateSnapshot = maybeTakeSnapshot;
+  }
+
+  // Reset snapshots when play starts or resets
+  const origPlayClick = btnPlay ? btnPlay.onclick : null;
+  function resetSnapshots() {
+    snapshots.length = 0;
+    lastSnapshotTime = -Infinity;
+    updateTimeButtons();
+  }
+
+  // Patch play button to also reset snapshots
+  if (btnPlay) {
+    const playHandler = btnPlay.onclick;
+    // The addEventListener above already handles click — add snapshot reset
+    btnPlay.addEventListener('click', () => {
+      if (!state.playing) resetSnapshots(); // just started
+      updateTimeButtons();
+    });
+  }
+  if (btnReset) {
+    btnReset.addEventListener('click', resetSnapshots);
+  }
+
+  updateTimeButtons();
+
   // ── Sliders ─────────────────────────────────────────────
 
   function bindSlider(id, displayId, prop, format) {

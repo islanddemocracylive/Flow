@@ -1020,4 +1020,52 @@ export class FireSimulation {
     }
     this.recalcAirflow();
   }
+
+  // ── Snapshot / time-skip ──────────────────────────────────
+
+  /** Take a snapshot of the live simulation state */
+  takeSnapshot() {
+    return {
+      simTime: this.simTime,
+      heat: new Float32Array(this.heat),
+      cellState: new Uint8Array(this.cellState),
+      heatExposure: new Float32Array(this.heatExposure),
+      moisture: new Float32Array(this.moisture),
+      gasLayerTemp: this.gasLayerTemp,
+      totalHRR: this.totalHRR,
+      oxygenLevel: this.oxygenLevel,
+      flashedOver: this.flashedOver,
+      flashoverTimer: this.flashoverTimer,
+      ventLimited: this.ventLimited,
+      gameState: this.gameState,
+      winTimer: this.winTimer,
+    };
+  }
+
+  /** Restore simulation state from a snapshot */
+  restoreSnapshot(snap) {
+    this.simTime = snap.simTime;
+    this.heat.set(snap.heat);
+    this.cellState.set(snap.cellState);
+    this.heatExposure.set(snap.heatExposure);
+    this.moisture.set(snap.moisture);
+    this.gasLayerTemp = snap.gasLayerTemp;
+    this.totalHRR = snap.totalHRR;
+    this.oxygenLevel = snap.oxygenLevel;
+    this.flashedOver = snap.flashedOver;
+    this.flashoverTimer = snap.flashoverTimer;
+    this.ventLimited = snap.ventLimited;
+    this.gameState = snap.gameState;
+    this.winTimer = snap.winTimer;
+    this.nextHeat.fill(0);
+  }
+
+  /** Fast-forward: run simulation for the given number of seconds */
+  fastForward(seconds) {
+    const stepDt = 0.05; // 50ms per step (same as frame cap)
+    const steps = Math.round(seconds / stepDt);
+    for (let i = 0; i < steps; i++) {
+      this.step(stepDt);
+    }
+  }
 }

@@ -128,7 +128,7 @@ let sprayMat = null;
 let hoseBarrel = null;
 const SPRAY_SEGMENTS = 48;
 const BARREL_LENGTH = 1.0;  // ft — visible nozzle barrel
-const BARREL_RADIUS = 0.06; // ft — ~1.5 inch diameter
+const BARREL_RADIUS = 0.073; // ft — 1.75 inch diameter (standard nozzle)
 
 if (scene) {
   sprayMat = new THREE.MeshBasicMaterial({
