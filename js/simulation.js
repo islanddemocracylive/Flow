@@ -252,21 +252,18 @@ export class FireSimulation {
     const maxReach = 2.0 * Math.sqrt(this.sprayPSI);
     if (totalDist > maxReach) return null;
 
-    // Piecewise spray spread model based on fluid dynamics research:
-    // Zone 1 (0 to breakup distance): coherent core, radius ≈ nozzle opening
-    // Zone 2 (beyond breakup): stream disperses at ~5° half-angle
-    // breakup ~2 ft at 100 PSI. Short breakup ensures visible cone spread
-    // even for overhead shots (4 ft to ceiling).
-    // Validation: 4 ft→0.22 ft radius, 10 ft→0.74 ft, 20 ft→1.6 ft (spec: 1-2 ft)
+    // Spray spread: cone from nozzle + splash radius at surface.
+    // The stream expands at ~5° half-angle from the nozzle tip.
+    // On impact, water splashes radially — even a tight stream creates a
+    // wetted area much larger than the stream cross-section. Minimum splash
+    // radius of 0.5 ft (~1 ft diameter) accounts for this.
+    // Validation: 3 ft→0.5 ft (splash floor), 10 ft→0.92 ft, 20 ft→1.8 ft
     const NOZZLE_R = 0.042;  // ft — 1" diameter / 2 (standard combo nozzle)
-    const BASE_BREAKUP = 2.0; // ft at 100 PSI
-    const breakupDist = BASE_BREAKUP * Math.sqrt(this.sprayPSI / 100);
+    const MIN_SPLASH_R = 0.5; // ft — minimum wetted radius from splash on impact
     const BASE_HALF_ANGLE_DEG = 5.0; // degrees, straight stream
     const halfAngleDeg = BASE_HALF_ANGLE_DEG * (this.waterRadius / 2) * Math.sqrt(100 / this.sprayPSI);
     const tanAlpha = Math.tan(halfAngleDeg * Math.PI / 180);
-    const coneRadius = totalDist <= breakupDist
-      ? NOZZLE_R
-      : NOZZLE_R + tanAlpha * (totalDist - breakupDist);
+    const coneRadius = Math.max(MIN_SPLASH_R, NOZZLE_R + tanAlpha * totalDist);
 
     // Equivalent half-angle for the cone-surface intersection math
     const halfAngleRad = Math.atan2(coneRadius, totalDist);

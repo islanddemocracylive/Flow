@@ -194,11 +194,9 @@ export function updateArcDebug(playerPos, hit, sprayPSI) {
   // Piecewise spray spread model matching simulation
   const totalDist = Math.sqrt(R * R + H * H);
   const NOZZLE_R = 0.042;
-  const breakupDist = 2.0 * Math.sqrt(sprayPSI / 100);
+  const MIN_SPLASH_R = 0.5;
   const tanAlpha = Math.tan(5.0 * Math.PI / 180); // 5° half-angle, waterRadius=2 default
-  const coneRadius = totalDist <= breakupDist
-    ? NOZZLE_R
-    : NOZZLE_R + tanAlpha * (totalDist - breakupDist);
+  const coneRadius = Math.max(MIN_SPLASH_R, NOZZLE_R + tanAlpha * totalDist);
 
   // Effective fraction: perpendicularity × distance-based droplet fallout
   const perpFraction = Math.pow(Math.cos(impactAngle), 1.3); // cos^1.3 for realistic grazing falloff
