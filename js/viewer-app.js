@@ -162,9 +162,14 @@ function loop() {
       if (hit) {
         const playerPos = room3d.getPlayerPosition();
         const sprayParams = sim.getSprayParams(hit.worldX, hit.worldZ, playerPos);
+
+        // Always show spray visual on whatever surface we hit
+        const displayParams = sprayParams || { majorR: 1.5, minorR: 1.5, sprayAngle: 0, strengthFactor: 0.5, centerOffset: 0 };
+        room3d.showWaterSpray(hit.worldX, hit.worldZ, displayParams, hit);
+
+        // Only send water to simulation if the ceiling is in range
         if (sprayParams) {
           net.sendWater(hit.worldX, hit.worldZ, playerPos);
-          room3d.showWaterSpray(hit.worldX, hit.worldZ, sprayParams, hit);
           const rect = room3dContainer.getBoundingClientRect();
           const ndcX = ((sprayX - rect.left) / rect.width) * 2 - 1;
           const ndcY = -((sprayY - rect.top) / rect.height) * 2 + 1;
