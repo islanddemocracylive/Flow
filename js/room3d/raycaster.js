@@ -399,11 +399,11 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
   else if (Math.abs(hz - SURFACE_OFFSET) < 0.01)             impactCos = Math.abs(bz); // wall-z0
   else if (Math.abs(hz - (ROOM_D - SURFACE_OFFSET)) < 0.01) impactCos = Math.abs(bz); // wall-zD
 
-  // Effective fraction: combines geometric projection with attack angle
-  // At perpendicular: impactCos=1, areaRatio≈1 → 100% effective
-  // At oblique angles: impactCos<1, area stretches → less effective per unit area
+  // Effective fraction: combines geometric projection with attack angle.
+  // cos^1.3 models real impingement behavior: nearly full effectiveness at
+  // moderate angles, but harsher dropoff at grazing angles (splash-back).
   const areaRatio = idealArea > 0.01 ? Math.min(1, idealArea / totalArea) : 1;
-  const effectiveFraction = impactCos * areaRatio;
+  const effectiveFraction = Math.pow(impactCos, 1.3) * areaRatio;
 
   _lastSprayInfo = {
     projectedArea: totalArea,
@@ -441,10 +441,12 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
     const CONE_MAX_LEN = 3.0; // ft — only show first 3 ft of cone
     const coneLen = Math.min(bLen, CONE_MAX_LEN);
 
-    // Quadratic spread model matching simulation: r = nozzleR + spreadK * d²
-    // Use same spreadK as getSprayParams (baseSpreadK=0.014 at 100 PSI, waterRadius=2)
-    const SPREAD_K = 0.014; // TODO: pass from params if waterRadius/PSI change
-    const _coneR = (d) => NOZZLE_RADIUS + SPREAD_K * d * d;
+    // Piecewise spread model matching simulation: coherent core, then 4° expansion
+    const BREAKUP = 5.0; // ft — coherent core length
+    const TAN_ALPHA = Math.tan(4.0 * Math.PI / 180); // 4° half-angle
+    const _coneR = (d) => d <= BREAKUP
+      ? NOZZLE_RADIUS
+      : NOZZLE_RADIUS + TAN_ALPHA * (d - BREAKUP);
 
     // Unit basis vectors perpendicular to beam
     const u1x = ux / discRadius, u1y = uy / discRadius, u1z = uz / discRadius;

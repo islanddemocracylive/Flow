@@ -17,7 +17,7 @@ import { getSprayInfo } from './raycaster.js';
 
 const G = 32.174;       // gravity in ft/s²
 const ARC_SEGMENTS = 48;
-const Cv = 0.97;        // nozzle velocity coefficient
+const Cv = 0.89;        // nozzle velocity coefficient (combination nozzle, straight stream)
 const RHO = 998;        // water density kg/m³
 const PSI_TO_PA = 6894.76;
 const FT_PER_M = 1 / 0.3048;
@@ -191,17 +191,20 @@ export function updateArcDebug(playerPos, hit, sprayPSI) {
   const arcMidY = nozzle.y + vy * tMid - 0.5 * G * tMid * tMid;
   const sag = Math.abs(arcMidY - straightMidY);
 
-  // Cone radius at impact distance
+  // Piecewise spray spread model matching simulation
   const totalDist = Math.sqrt(R * R + H * H);
-  // Quadratic spread model matching simulation
   const NOZZLE_R = 0.042;
-  const baseSpreadK = 0.014;
-  const spreadK = baseSpreadK * Math.sqrt(100 / sprayPSI); // waterRadius=2 default
-  const coneRadius = NOZZLE_R + spreadK * totalDist * totalDist;
+  const breakupDist = 5.0 * Math.sqrt(sprayPSI / 100);
+  const tanAlpha = Math.tan(4.0 * Math.PI / 180); // 4° half-angle, waterRadius=2 default
+  const coneRadius = totalDist <= breakupDist
+    ? NOZZLE_R
+    : NOZZLE_R + tanAlpha * (totalDist - breakupDist);
 
-  // Effective fraction: perpendicularity × gravity dropout
-  const perpFraction = Math.cos(impactAngle);
-  const dropoutFraction = coneRadius > 0.01 ? Math.max(0, 1 - sag / coneRadius) : 1;
+  // Effective fraction: perpendicularity × distance-based droplet fallout
+  const perpFraction = Math.pow(Math.cos(impactAngle), 1.3); // cos^1.3 for realistic grazing falloff
+  // Droplet fallout: fine droplets lose momentum at long range (spec strengthFactor)
+  const rangeFrac = totalDist / (2.0 * Math.sqrt(sprayPSI));
+  const dropoutFraction = rangeFrac > 0.6 ? 1.0 - 0.5 * (rangeFrac - 0.6) / 0.4 : 1.0;
   const effectiveFraction = perpFraction * dropoutFraction;
 
   const info = {

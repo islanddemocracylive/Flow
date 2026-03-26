@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(__NEW_LINE_98fd66ad19a602c1__ The debug cone wireframe now starts from a 1.75\" diameter circle:*)"
+      "Bash(__NEW_LINE_98fd66ad19a602c1__ The debug cone wireframe now starts from a 1.75\" diameter circle:*)",
+      "Bash(grep -o \"\"result\"\":\"\"[^\"\"]*\"\" /Users/island/.claude/projects/-Users-island-Cowork-flow-state/68aac539-c060-4698-a538-2005fd71b20f/tool-results/b4pqzkvw6.txt)"
     ]
   }
 }

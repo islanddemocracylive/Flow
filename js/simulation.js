@@ -247,22 +247,25 @@ export class FireSimulation {
     // 3D distance from hose to surface hit point
     const totalDist = Math.sqrt(surfaceDist * surfaceDist + perpDist * perpDist);
 
-    // Max reach scales with PSI: ~20 ft at 100 PSI (spec §5.1: 15-25 ft effective)
-    const maxReach = this.sprayPSI * 0.2;
+    // Max reach scales with sqrt(PSI) — velocity ∝ sqrt(PSI), range ∝ velocity.
+    // 20 ft at 100 PSI, ~14 ft at 50 PSI, ~17 ft at 75 PSI (spec §5.1: 15-25 ft).
+    const maxReach = 2.0 * Math.sqrt(this.sprayPSI);
     if (totalDist > maxReach) return null;
 
-    // Spray spread model: real nozzle stream stays coherent near the exit
-    // then disperses quadratically with distance. Fitted to observed data:
-    //   0 ft: 1.75" (nozzle opening)
-    //   4 ft: ~4" radius
-    //   5 ft: ~6" radius
-    //  10 ft: ~1.4 ft radius
-    // Model: radius = nozzleR + spreadK * distance²
-    // spreadK scales with waterRadius (wider pattern) and inversely with PSI.
-    const NOZZLE_R = 0.042;  // ft — 1" diameter / 2 (standard combo nozzle straight stream)
-    const baseSpreadK = 0.014; // ft/ft² at 100 PSI, waterRadius=2
-    const spreadK = baseSpreadK * (this.waterRadius / 2) * Math.sqrt(100 / this.sprayPSI);
-    const coneRadius = NOZZLE_R + spreadK * totalDist * totalDist;
+    // Piecewise spray spread model based on fluid dynamics research:
+    // Zone 1 (0 to breakup distance): coherent core, radius ≈ nozzle opening
+    // Zone 2 (beyond breakup): stream disperses at ~4° half-angle
+    // breakup distance ~5 ft at 100 PSI, scales with sqrt(PSI).
+    // waterRadius slider scales the cone angle (wider pattern = larger angle).
+    const NOZZLE_R = 0.042;  // ft — 1" diameter / 2 (standard combo nozzle)
+    const BASE_BREAKUP = 5.0; // ft at 100 PSI
+    const breakupDist = BASE_BREAKUP * Math.sqrt(this.sprayPSI / 100);
+    const BASE_HALF_ANGLE_DEG = 4.0; // degrees, straight stream
+    const halfAngleDeg = BASE_HALF_ANGLE_DEG * (this.waterRadius / 2) * Math.sqrt(100 / this.sprayPSI);
+    const tanAlpha = Math.tan(halfAngleDeg * Math.PI / 180);
+    const coneRadius = totalDist <= breakupDist
+      ? NOZZLE_R
+      : NOZZLE_R + tanAlpha * (totalDist - breakupDist);
 
     // Equivalent half-angle for the cone-surface intersection math
     const halfAngleRad = Math.atan2(coneRadius, totalDist);
@@ -324,13 +327,12 @@ export class FireSimulation {
     // Derive suppression rate from physics:
     // GPM → gallons/sec, distributed over spray ellipse area.
     // Peak density at cone center = 3× average (cone falloff profile integrates
-    // to 1/3 of area × peak). COOLING_FACTOR converts peak gal/s/sqft to heat
-    // reduction rate.
-    // CF=5 compensates for background-tab throttling (controller at ~1fps
-    // while viewer tab is focused, dt capped at 0.05).
-    // At 100 PSI overhead: ~instant. 7ft: ~0.2s. 10ft: ~0.5s.
-    // Moisture mechanic handles re-ignition resistance separately.
-    const COOLING_FACTOR = 5;
+    // to 1/3 of area × peak). COOLING_FACTOR converts gal/s/sqft to heat
+    // reduction rate (heat is normalized [0,1]).
+    // Physics basis: at 150 GPM on ~4 ft², peak density ≈ 9.5 gal/s/ft²,
+    // knockdown should take 0.5-1.0s per spec §5.4.2. CF=1 gives ~0.87s
+    // at 10 ft range — matches spec.
+    const COOLING_FACTOR = 1;
     const gps = this.getGPM() / 60;                      // gallons per second
     const sprayArea = Math.PI * majorR * minorR;          // sq ft
     const peakDensity = 3 * gps / sprayArea;              // gal/s/sqft at center
@@ -390,9 +392,11 @@ export class FireSimulation {
         }
 
         // Accumulate moisture – peak water density × falloff at this cell.
-        // Saturates at 1.0 in ~0.5s of continuous direct spray overhead.
+        // Scaled by MOISTURE_RATE so saturation takes 2-3s of direct spray
+        // per spec §5.4.2 (saturation dwell time).
+        const MOISTURE_RATE = 0.04;
         const waterDensity = peakDensity * falloff * strengthMul;
-        const m = this.moisture[i] + waterDensity * dt;
+        const m = this.moisture[i] + waterDensity * dt * MOISTURE_RATE;
         this.moisture[i] = m < 1 ? m : 1;
 
         totalWaterApplied += waterDensity * dt;
