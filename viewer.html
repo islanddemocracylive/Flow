@@ -16,9 +16,12 @@
     }
     #status.connected { color: #4a4; }
 
-    /* Hide touch controls on desktop (no touchscreen) */
-    @media (hover: hover) and (pointer: fine) {
-      .joystick-zone, .spray-btn, #crosshair { display: none !important; }
+    /* Show touch controls only on narrow screens (mobile/tablet) */
+    .joystick-zone, .spray-btn, #crosshair { display: none !important; }
+    @media (max-width: 1024px) {
+      .joystick-zone { display: block !important; }
+      .spray-btn { display: flex !important; }
+      #crosshair { display: block !important; }
     }
 
     /* Joystick zones */
