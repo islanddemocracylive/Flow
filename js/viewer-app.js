@@ -110,6 +110,37 @@ if (room3dContainer) {
     room3d.hideWaterSpray();
     clearSprayScreenPosition();
   });
+
+  // Mobile: single-finger press+drag to spray at touch position
+  let sprayTouchId = -1;
+  room3dContainer.addEventListener('touchstart', (e) => {
+    if (sprayTouchId !== -1) return;           // already tracking a spray touch
+    const t = e.changedTouches[0];
+    sprayTouchId = t.identifier;
+    spraying = true;
+    sprayX = t.clientX;
+    sprayY = t.clientY;
+  }, { passive: true });
+  document.addEventListener('touchmove', (e) => {
+    if (sprayTouchId === -1) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (t.identifier !== sprayTouchId) continue;
+      sprayX = t.clientX;
+      sprayY = t.clientY;
+    }
+  }, { passive: true });
+  function endSprayTouch(e) {
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier !== sprayTouchId) continue;
+      sprayTouchId = -1;
+      spraying = false;
+      room3d.hideWaterSpray();
+      clearSprayScreenPosition();
+    }
+  }
+  document.addEventListener('touchend', endSprayTouch, { passive: true });
+  document.addEventListener('touchcancel', endSprayTouch, { passive: true });
 }
 
 // Mobile: spray buttons target screen center (crosshair)

@@ -255,7 +255,7 @@ export function updateCamera(sim) {
 
   // Look joystick rotation
   if (lookJoystickX !== 0 || lookJoystickY !== 0) {
-    fpYaw += lookJoystickX * LOOK_JOYSTICK_SPEED * dt;
+    fpYaw -= lookJoystickX * LOOK_JOYSTICK_SPEED * dt;
     fpPitch -= lookJoystickY * LOOK_JOYSTICK_SPEED * dt;
     fpPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, fpPitch));
   }
