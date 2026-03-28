@@ -47,28 +47,18 @@ function getSessionToken(req) {
 }
 
 // ── S3 config ────────────────────────────────────────────
-// Railway bucket variable references (no AWS_ prefix): ACCESS_KEY_ID,
-// SECRET_ACCESS_KEY, REGION, ENDPOINT, BUCKET_NAME.
-// Map them in your Railway service variables, e.g.:
-//   ACCESS_KEY_ID=${{my-bucket.ACCESS_KEY_ID}}
-// Also checks AWS_* and S3_* prefixed env vars as fallback.
-const S3_ACCESS_KEY = process.env.ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || process.env.S3_ACCESS_KEY_ID;
-const S3_SECRET_KEY = process.env.SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || process.env.S3_SECRET_ACCESS_KEY;
-const S3_ENDPOINT = process.env.ENDPOINT || process.env.AWS_ENDPOINT || process.env.S3_ENDPOINT;
-const S3_REGION = process.env.REGION || process.env.AWS_REGION || process.env.S3_REGION || 'us-east-1';
-const S3_FORCE_PATH_STYLE = process.env.S3_FORCE_PATH_STYLE === 'true';
-
+// Railway bucket variable references: ACCESS_KEY_ID, SECRET_ACCESS_KEY,
+// REGION, ENDPOINT, RAILWAY_BUCKET_NAME
 const s3 = new S3Client({
-  region: S3_REGION,
-  endpoint: S3_ENDPOINT || undefined,
-  forcePathStyle: S3_FORCE_PATH_STYLE,
-  credentials: (S3_ACCESS_KEY && S3_SECRET_KEY) ? {
-    accessKeyId: S3_ACCESS_KEY,
-    secretAccessKey: S3_SECRET_KEY,
-  } : undefined,
+  region: process.env.REGION,
+  endpoint: process.env.ENDPOINT,
+  credentials: {
+    accessKeyId: process.env.ACCESS_KEY_ID,
+    secretAccessKey: process.env.SECRET_ACCESS_KEY,
+  },
 });
 
-const S3_BUCKET = process.env.BUCKET_NAME || process.env.S3_BUCKET || 'flow-scenarios';
+const S3_BUCKET = process.env.RAILWAY_BUCKET_NAME;
 const S3_PREFIX = 'scenarios/';
 
 // ── S3 helpers ───────────────────────────────────────────
