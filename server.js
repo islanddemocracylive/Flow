@@ -47,13 +47,15 @@ function getSessionToken(req) {
 }
 
 // ── S3 config ────────────────────────────────────────────
-// Railway bucket variable references: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
-// AWS_REGION, AWS_ENDPOINT, BUCKET_NAME
-// Also supports S3_* prefixed env vars as fallback.
-const S3_ACCESS_KEY = process.env.AWS_ACCESS_KEY_ID || process.env.S3_ACCESS_KEY_ID;
-const S3_SECRET_KEY = process.env.AWS_SECRET_ACCESS_KEY || process.env.S3_SECRET_ACCESS_KEY;
-const S3_ENDPOINT = process.env.AWS_ENDPOINT || process.env.S3_ENDPOINT;
-const S3_REGION = process.env.AWS_REGION || process.env.S3_REGION || 'us-east-1';
+// Railway bucket variable references (no AWS_ prefix): ACCESS_KEY_ID,
+// SECRET_ACCESS_KEY, REGION, ENDPOINT, BUCKET_NAME.
+// Map them in your Railway service variables, e.g.:
+//   ACCESS_KEY_ID=${{my-bucket.ACCESS_KEY_ID}}
+// Also checks AWS_* and S3_* prefixed env vars as fallback.
+const S3_ACCESS_KEY = process.env.ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || process.env.S3_ACCESS_KEY_ID;
+const S3_SECRET_KEY = process.env.SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || process.env.S3_SECRET_ACCESS_KEY;
+const S3_ENDPOINT = process.env.ENDPOINT || process.env.AWS_ENDPOINT || process.env.S3_ENDPOINT;
+const S3_REGION = process.env.REGION || process.env.AWS_REGION || process.env.S3_REGION || 'us-east-1';
 const S3_FORCE_PATH_STYLE = process.env.S3_FORCE_PATH_STYLE === 'true';
 
 const s3 = new S3Client({
