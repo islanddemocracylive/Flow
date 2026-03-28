@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flow State – Login</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+    .login-box {
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 12px;
+      padding: 36px 32px;
+      max-width: 340px;
+      width: 90%;
+      text-align: center;
+    }
+    .login-box h1 {
+      font-size: 1.4rem;
+      color: #ff6b35;
+      margin-bottom: 6px;
+    }
+    .login-box .subtitle {
+      font-size: 0.8rem;
+      color: #888;
+      margin-bottom: 24px;
+    }
+    .login-box label {
+      display: block;
+      text-align: left;
+      font-size: 0.8rem;
+      color: #aaa;
+      margin-bottom: 4px;
+    }
+    .login-box input[type="text"],
+    .login-box input[type="password"] {
+      width: 100%;
+      background: #0f3460;
+      color: #e0e0e0;
+      border: 1px solid #1a3a6e;
+      border-radius: 4px;
+      padding: 8px 10px;
+      font-size: 0.9rem;
+      outline: none;
+      margin-bottom: 14px;
+    }
+    .login-box input:focus {
+      border-color: #ff6b35;
+    }
+    .login-box button {
+      width: 100%;
+      padding: 10px 0;
+      background: #1a6a2e;
+      border: 1px solid #2a8a3e;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .login-box button:hover {
+      background: #2a8a3e;
+    }
+    .error {
+      color: #e74c3c;
+      font-size: 0.8rem;
+      margin-top: 12px;
+      min-height: 1.2em;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-box">
+    <h1>Flow State</h1>
+    <p class="subtitle">Fire & Water Ceiling Simulation</p>
+    <form id="login-form">
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" autocomplete="username" required>
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+      <button type="submit">Log In</button>
+    </form>
+    <p class="error" id="error"></p>
+  </div>
+  <script>
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('error');
+      errorEl.textContent = '';
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        if (res.ok) {
+          window.location.href = '/';
+        } else {
+          const data = await res.json();
+          errorEl.textContent = data.error || 'Login failed';
+        }
+      } catch {
+        errorEl.textContent = 'Connection error';
+      }
+    });
+  </script>
+</body>
+</html>

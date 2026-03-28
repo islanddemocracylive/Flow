@@ -59,9 +59,9 @@ export function setupAdminPanel(sim, state, net) {
   const btnSave = document.getElementById('btn-save-scenario');
   const btnDelete = document.getElementById('btn-delete-scenario');
 
-  function refreshScenarioList() {
+  async function refreshScenarioList() {
     if (!scenarioSelect) return;
-    const names = listScenarios();
+    const names = await listScenarios();
     // Preserve current selection if possible
     const current = scenarioSelect.value;
     scenarioSelect.innerHTML = '<option value="">— New Scenario —</option>';
@@ -74,23 +74,24 @@ export function setupAdminPanel(sim, state, net) {
     if (names.includes(current)) {
       scenarioSelect.value = current;
     }
+    return names;
   }
 
-  refreshScenarioList();
-
-  // Auto-select and load the first scenario on page load
-  if (scenarioSelect && scenarioSelect.options.length > 1) {
-    scenarioSelect.value = scenarioSelect.options[1].value; // skip "— New Scenario —"
-    scenarioSelect.dispatchEvent(new Event('change'));
-  }
+  // Initial load + auto-select first scenario
+  refreshScenarioList().then(names => {
+    if (scenarioSelect && names && names.length > 0) {
+      scenarioSelect.value = names[0];
+      scenarioSelect.dispatchEvent(new Event('change'));
+    }
+  });
 
   if (scenarioSelect) {
-    scenarioSelect.addEventListener('change', () => {
+    scenarioSelect.addEventListener('change', async () => {
       const name = scenarioSelect.value;
       if (scenarioName) scenarioName.value = name;
       // Auto-load scenario on selection
       if (name) {
-        const data = loadScenario(name);
+        const data = await loadScenario(name);
         if (data) {
           sim.loadScenarioData(data);
           syncSliders(sim);
@@ -101,21 +102,37 @@ export function setupAdminPanel(sim, state, net) {
     });
   }
 
-  if (btnSave) btnSave.addEventListener('click', () => {
+  if (btnSave) btnSave.addEventListener('click', async () => {
     const name = scenarioName ? scenarioName.value.trim() : '';
     if (!name) { alert('Enter a scenario name'); return; }
-    saveScenario(name, sim.toScenarioData());
-    refreshScenarioList();
-    if (scenarioSelect) scenarioSelect.value = name;
+    btnSave.disabled = true;
+    btnSave.textContent = 'Saving...';
+    try {
+      await saveScenario(name, sim.toScenarioData());
+      await refreshScenarioList();
+      if (scenarioSelect) scenarioSelect.value = name;
+    } catch (err) {
+      alert('Failed to save scenario: ' + err.message);
+    } finally {
+      btnSave.disabled = false;
+      btnSave.textContent = 'Save';
+    }
   });
 
-  if (btnDelete) btnDelete.addEventListener('click', () => {
+  if (btnDelete) btnDelete.addEventListener('click', async () => {
     const name = scenarioSelect ? scenarioSelect.value : '';
     if (!name) return;
     if (confirm(`Delete scenario "${name}"?`)) {
-      deleteScenario(name);
-      refreshScenarioList();
-      if (scenarioName) scenarioName.value = '';
+      btnDelete.disabled = true;
+      try {
+        await deleteScenario(name);
+        await refreshScenarioList();
+        if (scenarioName) scenarioName.value = '';
+      } catch (err) {
+        alert('Failed to delete scenario: ' + err.message);
+      } finally {
+        btnDelete.disabled = false;
+      }
     }
   });
 
@@ -303,6 +320,15 @@ export function setupAdminPanel(sim, state, net) {
   if (checkboxGrid) {
     checkboxGrid.addEventListener('change', () => {
       state.showGrid = checkboxGrid.checked;
+    });
+  }
+
+  // ── Logout button ──────────────────────────────────────
+  const btnLogout = document.getElementById('btn-logout');
+  if (btnLogout) {
+    btnLogout.addEventListener('click', async () => {
+      await fetch('/api/logout', { method: 'POST' });
+      window.location.href = '/login.html';
     });
   }
 

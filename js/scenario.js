@@ -1,62 +1,52 @@
 /**
- * Scenario manager – save/load/list room configurations from localStorage.
+ * Scenario manager – save/load/list room configurations via server API (S3-backed).
  *
  * A scenario stores the complete room design:
  *   - Vents (ceiling holes + doors on any wall)
  *   - Obstacles (stackable blocks on floor)
  *   - Fire start locations
  *   - Simulation parameters (spread speed, water strength, etc.)
+ *
+ * All functions are async and communicate with /api/scenarios/* endpoints.
  */
 
-const STORAGE_KEY = 'flow_scenarios';
-
-function loadAll() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
+async function handleResponse(res) {
+  if (res.status === 401) {
+    window.location.href = '/login.html';
+    throw new Error('Not authenticated');
   }
-}
-
-function saveAll(scenarios) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(scenarios));
+  return res;
 }
 
 /** Get list of scenario names (sorted alphabetically) */
-export function listScenarios() {
-  return Object.keys(loadAll()).sort();
+export async function listScenarios() {
+  const res = await handleResponse(await fetch('/api/scenarios'));
+  if (!res.ok) return [];
+  return await res.json();
 }
 
 /** Save a scenario by name using data from sim.toScenarioData() */
-export function saveScenario(name, scenarioData) {
-  const all = loadAll();
-  all[name] = {
-    ...scenarioData,
-    savedAt: Date.now(),
-  };
-  saveAll(all);
+export async function saveScenario(name, scenarioData) {
+  const res = await handleResponse(await fetch(`/api/scenarios/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(scenarioData),
+  }));
+  if (!res.ok) throw new Error('Failed to save scenario');
 }
 
 /** Load a scenario by name. Returns null if not found. */
-export function loadScenario(name) {
-  const all = loadAll();
-  return all[name] || null;
+export async function loadScenario(name) {
+  const res = await handleResponse(await fetch(`/api/scenarios/${encodeURIComponent(name)}`));
+  if (res.status === 404) return null;
+  if (!res.ok) return null;
+  return await res.json();
 }
 
 /** Delete a scenario by name */
-export function deleteScenario(name) {
-  const all = loadAll();
-  delete all[name];
-  saveAll(all);
-}
-
-/** Rename a scenario */
-export function renameScenario(oldName, newName) {
-  const all = loadAll();
-  if (all[oldName]) {
-    all[newName] = all[oldName];
-    delete all[oldName];
-    saveAll(all);
-  }
+export async function deleteScenario(name) {
+  const res = await handleResponse(await fetch(`/api/scenarios/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  }));
+  if (!res.ok) throw new Error('Failed to delete scenario');
 }
