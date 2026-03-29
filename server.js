@@ -61,6 +61,15 @@ const s3 = new S3Client({
 const S3_BUCKET = process.env.RAILWAY_BUCKET_NAME;
 const S3_PREFIX = 'scenarios/';
 
+// Log S3 config at startup (no secrets) so misconfig is obvious in Railway logs
+console.log('S3 config:', {
+  region: process.env.REGION || '(not set)',
+  endpoint: process.env.ENDPOINT || '(not set)',
+  bucket: S3_BUCKET || '(not set)',
+  hasAccessKey: !!process.env.ACCESS_KEY_ID,
+  hasSecretKey: !!process.env.SECRET_ACCESS_KEY,
+});
+
 // ── S3 helpers ───────────────────────────────────────────
 async function s3ListScenarios() {
   const result = await s3.send(new ListObjectsV2Command({
@@ -196,7 +205,7 @@ const server = http.createServer(async (req, res) => {
       const names = await s3ListScenarios();
       sendJSON(res, 200, names);
     } catch (err) {
-      console.error('S3 list error:', err.message);
+      console.error('S3 list error:', err);
       sendJSON(res, 500, { error: 'Failed to list scenarios' });
     }
     return;
@@ -215,7 +224,7 @@ const server = http.createServer(async (req, res) => {
         if (!data) { sendJSON(res, 404, { error: 'Scenario not found' }); return; }
         sendJSON(res, 200, data);
       } catch (err) {
-        console.error('S3 get error:', err.message);
+        console.error('S3 get error:', err);
         sendJSON(res, 500, { error: 'Failed to load scenario' });
       }
       return;
@@ -228,7 +237,7 @@ const server = http.createServer(async (req, res) => {
         await s3PutScenario(name, body);
         sendJSON(res, 200, { ok: true });
       } catch (err) {
-        console.error('S3 put error:', err.message);
+        console.error('S3 put error:', err);
         sendJSON(res, 500, { error: 'Failed to save scenario' });
       }
       return;
@@ -239,7 +248,7 @@ const server = http.createServer(async (req, res) => {
         await s3DeleteScenario(name);
         sendJSON(res, 200, { ok: true });
       } catch (err) {
-        console.error('S3 delete error:', err.message);
+        console.error('S3 delete error:', err);
         sendJSON(res, 500, { error: 'Failed to delete scenario' });
       }
       return;
