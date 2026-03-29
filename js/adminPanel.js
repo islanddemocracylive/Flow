@@ -2,7 +2,7 @@
  * Admin panel: design modes, scenario management, sliders, play/stop, mobile layout.
  */
 
-import { listScenarios, saveScenario, loadScenario, deleteScenario } from './scenario.js';
+import { listScenarios, createScenario, saveScenario, loadScenario, deleteScenario } from './scenario.js';
 
 const canvas = document.getElementById('simulation-canvas');
 
@@ -59,39 +59,46 @@ export function setupAdminPanel(sim, state, net) {
   const btnSave = document.getElementById('btn-save-scenario');
   const btnDelete = document.getElementById('btn-delete-scenario');
 
+  // Track the currently selected scenario UUID
+  let currentScenarioId = null;
+
   async function refreshScenarioList() {
-    if (!scenarioSelect) return;
-    const names = await listScenarios();
-    // Preserve current selection if possible
-    const current = scenarioSelect.value;
+    if (!scenarioSelect) return [];
+    const scenarios = await listScenarios();
+    const currentId = currentScenarioId;
     scenarioSelect.innerHTML = '<option value="">— New Scenario —</option>';
-    for (const name of names) {
+    for (const s of scenarios) {
       const opt = document.createElement('option');
-      opt.value = name;
-      opt.textContent = name;
+      opt.value = s.id;
+      opt.textContent = s.name;
       scenarioSelect.appendChild(opt);
     }
-    if (names.includes(current)) {
-      scenarioSelect.value = current;
+    if (currentId && scenarios.some(s => s.id === currentId)) {
+      scenarioSelect.value = currentId;
     }
-    return names;
+    return scenarios;
   }
 
   // Initial load + auto-select first scenario
-  refreshScenarioList().then(names => {
-    if (scenarioSelect && names && names.length > 0) {
-      scenarioSelect.value = names[0];
+  refreshScenarioList().then(scenarios => {
+    if (scenarioSelect && scenarios.length > 0) {
+      scenarioSelect.value = scenarios[0].id;
       scenarioSelect.dispatchEvent(new Event('change'));
     }
   });
 
   if (scenarioSelect) {
     scenarioSelect.addEventListener('change', async () => {
-      const name = scenarioSelect.value;
-      if (scenarioName) scenarioName.value = name;
+      const id = scenarioSelect.value;
+      currentScenarioId = id || null;
+      // Show the scenario name in the text input
+      if (scenarioName) {
+        const opt = scenarioSelect.selectedOptions[0];
+        scenarioName.value = id ? opt.textContent : '';
+      }
       // Auto-load scenario on selection
-      if (name) {
-        const data = await loadScenario(name);
+      if (id) {
+        const data = await loadScenario(id);
         if (data) {
           sim.loadScenarioData(data);
           syncSliders(sim);
@@ -108,9 +115,16 @@ export function setupAdminPanel(sim, state, net) {
     btnSave.disabled = true;
     btnSave.textContent = 'Saving...';
     try {
-      await saveScenario(name, sim.toScenarioData());
+      if (currentScenarioId) {
+        // Update existing scenario
+        await saveScenario(currentScenarioId, { name, data: sim.toScenarioData() });
+      } else {
+        // Create new scenario with UUID
+        const result = await createScenario(name, sim.toScenarioData());
+        currentScenarioId = result.id;
+      }
       await refreshScenarioList();
-      if (scenarioSelect) scenarioSelect.value = name;
+      if (scenarioSelect && currentScenarioId) scenarioSelect.value = currentScenarioId;
     } catch (err) {
       alert('Failed to save scenario: ' + err.message);
     } finally {
@@ -120,12 +134,14 @@ export function setupAdminPanel(sim, state, net) {
   });
 
   if (btnDelete) btnDelete.addEventListener('click', async () => {
-    const name = scenarioSelect ? scenarioSelect.value : '';
-    if (!name) return;
+    const id = currentScenarioId;
+    if (!id) return;
+    const name = scenarioName ? scenarioName.value : id;
     if (confirm(`Delete scenario "${name}"?`)) {
       btnDelete.disabled = true;
       try {
-        await deleteScenario(name);
+        await deleteScenario(id);
+        currentScenarioId = null;
         await refreshScenarioList();
         if (scenarioName) scenarioName.value = '';
       } catch (err) {
