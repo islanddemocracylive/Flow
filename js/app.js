@@ -144,6 +144,9 @@ if (room3dContainer && camera && typeof THREE !== 'undefined') {
   ];
 
   let clickStartX = 0, clickStartY = 0;
+  let longPressTimer3d = null;
+  let longPressFired3d = false;
+  const LONG_PRESS_MS = 500;
 
   room3dContainer.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -152,6 +155,31 @@ if (room3dContainer && camera && typeof THREE !== 'undefined') {
   room3dContainer.addEventListener('pointerdown', (e) => {
     clickStartX = e.clientX;
     clickStartY = e.clientY;
+    longPressFired3d = false;
+
+    // Start long-press timer for touch obstacle removal in 3D orbit mode
+    if (e.pointerType === 'touch' && room3d.isOrbitMode() && state.designMode === 'obstacle') {
+      longPressTimer3d = setTimeout(() => {
+        longPressFired3d = true;
+        if (!setupRay(e.clientX, e.clientY)) return;
+        const hit = raycaster.ray.intersectPlane(floorPlane, hitPoint);
+        if (hit && hit.x >= 0 && hit.x < ROOM_W && hit.z >= 0 && hit.z < ROOM_D) {
+          sim.removeObstacleBlock(Math.floor(hit.x), Math.floor(hit.z));
+        }
+      }, LONG_PRESS_MS);
+    }
+  });
+
+  room3dContainer.addEventListener('pointermove', (e) => {
+    // Cancel long-press if pointer moves significantly
+    if (longPressTimer3d) {
+      const dx = e.clientX - clickStartX;
+      const dy = e.clientY - clickStartY;
+      if (Math.sqrt(dx * dx + dy * dy) > 5) {
+        clearTimeout(longPressTimer3d);
+        longPressTimer3d = null;
+      }
+    }
   });
 
   // Helper: set up raycaster from client coords
@@ -239,6 +267,10 @@ if (room3dContainer && camera && typeof THREE !== 'undefined') {
 
   // ── Click handling ──
   room3dContainer.addEventListener('pointerup', (e) => {
+    clearTimeout(longPressTimer3d);
+    longPressTimer3d = null;
+    if (longPressFired3d) { longPressFired3d = false; return; }
+
     if (!room3d.isOrbitMode() || !state.designMode) return;
 
     // Only count as click if mouse didn't move much (not an orbit drag)
