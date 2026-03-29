@@ -47,8 +47,8 @@ function getSessionToken(req) {
 }
 
 // ── S3 config ────────────────────────────────────────────
-// Railway bucket variable references: ACCESS_KEY_ID, SECRET_ACCESS_KEY,
-// REGION, ENDPOINT, RAILWAY_BUCKET_NAME
+// Railway bucket env vars: ACCESS_KEY_ID, SECRET_ACCESS_KEY,
+// REGION, ENDPOINT, BUCKET
 const s3 = new S3Client({
   region: process.env.REGION,
   endpoint: process.env.ENDPOINT,
@@ -58,8 +58,18 @@ const s3 = new S3Client({
   },
 });
 
-const S3_BUCKET = process.env.RAILWAY_BUCKET_NAME;
+const S3_BUCKET = process.env.BUCKET;
 const S3_PREFIX = 'scenarios/';
+const INDEX_KEY = 'scenarios/_index.json';
+
+// Log S3 config at startup (no secrets)
+console.log('S3 config:', {
+  region: process.env.REGION || '(not set)',
+  endpoint: process.env.ENDPOINT || '(not set)',
+  bucket: S3_BUCKET || '(not set)',
+  hasAccessKey: !!process.env.ACCESS_KEY_ID,
+  hasSecretKey: !!process.env.SECRET_ACCESS_KEY,
+});
 
 // Log S3 config at startup (no secrets) so misconfig is obvious in Railway logs
 console.log('S3 config:', {
@@ -71,23 +81,36 @@ console.log('S3 config:', {
 });
 
 // ── S3 helpers ───────────────────────────────────────────
-async function s3ListScenarios() {
-  const result = await s3.send(new ListObjectsV2Command({
-    Bucket: S3_BUCKET,
-    Prefix: S3_PREFIX,
-  }));
-  if (!result.Contents) return [];
-  return result.Contents
-    .map(obj => obj.Key.replace(S3_PREFIX, '').replace(/\.json$/, ''))
-    .filter(name => name.length > 0)
-    .sort();
-}
 
-async function s3GetScenario(name) {
+// Index maps UUID → { name, createdAt, updatedAt }
+async function loadIndex() {
   try {
     const result = await s3.send(new GetObjectCommand({
       Bucket: S3_BUCKET,
-      Key: `${S3_PREFIX}${name}.json`,
+      Key: INDEX_KEY,
+    }));
+    const body = await result.Body.transformToString();
+    return JSON.parse(body);
+  } catch (err) {
+    if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) return {};
+    throw err;
+  }
+}
+
+async function saveIndex(index) {
+  await s3.send(new PutObjectCommand({
+    Bucket: S3_BUCKET,
+    Key: INDEX_KEY,
+    Body: JSON.stringify(index),
+    ContentType: 'application/json',
+  }));
+}
+
+async function s3GetScenario(uuid) {
+  try {
+    const result = await s3.send(new GetObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: `${S3_PREFIX}${uuid}.json`,
     }));
     const body = await result.Body.transformToString();
     return JSON.parse(body);
@@ -97,19 +120,19 @@ async function s3GetScenario(name) {
   }
 }
 
-async function s3PutScenario(name, data) {
+async function s3PutScenario(uuid, data) {
   await s3.send(new PutObjectCommand({
     Bucket: S3_BUCKET,
-    Key: `${S3_PREFIX}${name}.json`,
+    Key: `${S3_PREFIX}${uuid}.json`,
     Body: JSON.stringify(data),
     ContentType: 'application/json',
   }));
 }
 
-async function s3DeleteScenario(name) {
+async function s3DeleteScenario(uuid) {
   await s3.send(new DeleteObjectCommand({
     Bucket: S3_BUCKET,
-    Key: `${S3_PREFIX}${name}.json`,
+    Key: `${S3_PREFIX}${uuid}.json`,
   }));
 }
 
@@ -178,7 +201,6 @@ const server = http.createServer(async (req, res) => {
   // ── Auth check for everything else ─────────────────────
   const token = getSessionToken(req);
   if (!isValidSession(token)) {
-    // Redirect browsers to login, return 401 for API calls
     if (pathname.startsWith('/api/')) {
       sendJSON(res, 401, { error: 'Not authenticated' });
     } else {
@@ -200,10 +222,15 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ── Scenario API ───────────────────────────────────────
+
+  // GET /api/scenarios — list all scenarios [{id, name, updatedAt}]
   if (pathname === '/api/scenarios' && req.method === 'GET') {
     try {
-      const names = await s3ListScenarios();
-      sendJSON(res, 200, names);
+      const index = await loadIndex();
+      const list = Object.entries(index)
+        .map(([id, meta]) => ({ id, name: meta.name, updatedAt: meta.updatedAt }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      sendJSON(res, 200, list);
     } catch (err) {
       console.error('S3 list error:', err);
       sendJSON(res, 500, { error: 'Failed to list scenarios' });
@@ -211,16 +238,40 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // POST /api/scenarios — create new scenario, returns {id}
+  if (pathname === '/api/scenarios' && req.method === 'POST') {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const id = crypto.randomUUID();
+      const now = Date.now();
+
+      const scenarioData = body.data || {};
+      scenarioData.savedAt = now;
+      await s3PutScenario(id, scenarioData);
+
+      const index = await loadIndex();
+      index[id] = { name: body.name || 'Untitled', createdAt: now, updatedAt: now };
+      await saveIndex(index);
+
+      sendJSON(res, 201, { id, name: index[id].name });
+    } catch (err) {
+      console.error('S3 create error:', err);
+      sendJSON(res, 500, { error: 'Failed to create scenario' });
+    }
+    return;
+  }
+
   if (pathname.startsWith('/api/scenarios/') && pathname.split('/').length === 4) {
-    const name = decodeURIComponent(pathname.split('/')[3]);
-    if (!name || name.includes('..') || name.includes('/')) {
-      sendJSON(res, 400, { error: 'Invalid scenario name' });
+    const id = decodeURIComponent(pathname.split('/')[3]);
+    if (!id || id.includes('..') || id.includes('/')) {
+      sendJSON(res, 400, { error: 'Invalid scenario id' });
       return;
     }
 
+    // GET /api/scenarios/:id — load scenario data
     if (req.method === 'GET') {
       try {
-        const data = await s3GetScenario(name);
+        const data = await s3GetScenario(id);
         if (!data) { sendJSON(res, 404, { error: 'Scenario not found' }); return; }
         sendJSON(res, 200, data);
       } catch (err) {
@@ -230,11 +281,26 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // PUT /api/scenarios/:id — update scenario data and/or name
     if (req.method === 'PUT') {
       try {
         const body = JSON.parse(await readBody(req));
-        body.savedAt = Date.now();
-        await s3PutScenario(name, body);
+        const now = Date.now();
+
+        if (body.data) {
+          body.data.savedAt = now;
+          await s3PutScenario(id, body.data);
+        }
+
+        const index = await loadIndex();
+        if (!index[id]) {
+          sendJSON(res, 404, { error: 'Scenario not found' });
+          return;
+        }
+        if (body.name !== undefined) index[id].name = body.name;
+        index[id].updatedAt = now;
+        await saveIndex(index);
+
         sendJSON(res, 200, { ok: true });
       } catch (err) {
         console.error('S3 put error:', err);
@@ -243,9 +309,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // DELETE /api/scenarios/:id
     if (req.method === 'DELETE') {
       try {
-        await s3DeleteScenario(name);
+        await s3DeleteScenario(id);
+        const index = await loadIndex();
+        delete index[id];
+        await saveIndex(index);
         sendJSON(res, 200, { ok: true });
       } catch (err) {
         console.error('S3 delete error:', err);
@@ -280,7 +350,6 @@ const controllers = new Set();
 const viewers = new Set();
 
 wss.on('connection', (ws, req) => {
-  // Check auth for WebSocket connections too
   const token = parseCookies(req.headers.cookie).flow_session;
   if (!isValidSession(token)) {
     ws.close(4001, 'Not authenticated');
@@ -290,7 +359,6 @@ wss.on('connection', (ws, req) => {
   let role = null;
 
   ws.on('message', (data, isBinary) => {
-    // First JSON message should be registration
     if (!role && !isBinary) {
       try {
         const msg = JSON.parse(data.toString());
@@ -304,7 +372,6 @@ wss.on('connection', (ws, req) => {
       } catch (e) { /* not JSON, fall through */ }
     }
 
-    // Controller messages → broadcast to all viewers
     if (role === 'controller') {
       for (const viewer of viewers) {
         if (viewer.readyState === 1) {
@@ -313,7 +380,6 @@ wss.on('connection', (ws, req) => {
       }
     }
 
-    // Viewer messages → relay to all controllers (e.g. water spray)
     if (role === 'viewer' && !isBinary) {
       for (const ctrl of controllers) {
         if (ctrl.readyState === 1) {
