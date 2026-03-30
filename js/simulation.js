@@ -19,7 +19,7 @@
 
 import {
   ROOM_W, ROOM_D, ROOM_H, ROOM_H_M, FT_TO_M,
-  GAS_LAYER_MASS, GAS_CP, FLASHOVER_TEMP, REIGNITION_TEMP,
+  GAS_LAYER_MASS, GAS_CP, UNTENABLE_TEMP,
   AMBIENT_TEMP, CELL_HRR_MAX,
   ROOM_AIR_MASS, AMBIENT_O2, O2_FLAMING_LIMIT, O2_LETHAL_LIMIT, O2_PER_MJ,
   DOOR_AREA_M2, DOOR_HEIGHT_M, VENT_AREA_M2,
@@ -64,7 +64,6 @@ export class FireSimulation {
     this.simTime = 0;
     this.totalHRR = 0;
     this.gasLayerTemp = AMBIENT_TEMP;
-    this.flashedOver = false;
     this.flashoverTimer = 0;
 
     // Oxygen model
@@ -109,7 +108,6 @@ export class FireSimulation {
     this.simTime = 0;
     this.totalHRR = 0;
     this.gasLayerTemp = AMBIENT_TEMP;
-    this.flashedOver = false;
     this.flashoverTimer = 0;
     this.oxygenLevel = AMBIENT_O2;
     this.ventLimited = false;
@@ -316,8 +314,10 @@ export class FireSimulation {
     return 15 * Math.sqrt(this.sprayPSI);
   }
 
-  applyWater(worldX, worldZ, dt, playerPos) {
-    const params = playerPos ? this.getSprayParams(worldX, worldZ, playerPos) : null;
+  applyWater(worldX, worldZ, dt, playerPos, precomputedParams) {
+    // Use pre-computed params from viewer if available (avoids wrong surface/nozzleY recalculation)
+    const params = precomputedParams
+      || (playerPos ? this.getSprayParams(worldX, worldZ, playerPos) : null);
 
     if (playerPos && !params) return; // out of range
 
@@ -325,97 +325,121 @@ export class FireSimulation {
     const minorR = params ? params.minorR : this.waterRadius;
     const angle = params ? params.sprayAngle : 0;
     const strengthMul = params ? params.strengthFactor : 1.0;
+    const mode = (params && params.mode) || 'direct';
 
-    // Derive suppression rate from physics:
-    // GPM → gallons/sec, distributed over spray ellipse area.
-    // Peak density at cone center = 3× average (cone falloff profile integrates
-    // to 1/3 of area × peak). COOLING_FACTOR converts gal/s/sqft to heat
-    // reduction rate (heat is normalized [0,1]).
-    // Physics basis: at 150 GPM on ~4 ft², peak density ≈ 9.5 gal/s/ft²,
-    // knockdown should take 0.5-1.0s per spec §5.4.2. CF=1 gives ~0.87s
-    // at 10 ft range — matches spec.
-    const COOLING_FACTOR = 1;
     const gps = this.getGPM() / 60;                      // gallons per second
-    const sprayArea = Math.PI * majorR * minorR;          // sq ft
-    const peakDensity = 3 * gps / sprayArea;              // gal/s/sqft at center
-    const suppressionRate = peakDensity * COOLING_FACTOR * strengthMul;
-
-    // Shift from hit point to true ellipse center along the spray direction
-    const off = params ? (params.centerOffset || 0) : 0;
-    const sprayX = worldX + Math.cos(angle) * off;
-    const sprayZ = worldZ + Math.sin(angle) * off;
-
-    const cosA = Math.cos(-angle);
-    const sinA = Math.sin(-angle);
-    const rMax = Math.ceil(Math.max(majorR, minorR));
-
-    // Grid cell containing the spray center
-    const cx = Math.floor(sprayX);
-    const cz = Math.floor(sprayZ);
-
     let totalWaterApplied = 0; // track water for gas layer cooling
 
-    for (let dy = -rMax; dy <= rMax; dy++) {
-      for (let dx = -rMax; dx <= rMax; dx++) {
-        const gx = cx + dx;
-        const gy = cz + dy;
-        if (gx < 0 || gx >= this.cols || gy < 0 || gy >= this.rows) continue;
+    // Fog mode: primarily gas layer cooling, with reduced surface suppression.
+    // ~75% of water evaporates in the gas layer (Barnett data, 0.35mm droplets).
+    // ~25% settles onto ceiling surfaces as distributed mist — provides reduced
+    // but real cell suppression at lower density than a direct stream.
+    // FOG_SURFACE_FRACTION accounts for the droplets that don't evaporate.
+    const FOG_SURFACE_FRACTION = 0.25;
 
-        // Sub-cell precision: distance from cell center to spray center
-        const offX = (gx + 0.5) - sprayX;
-        const offZ = (gy + 0.5) - sprayZ;
+    if (mode === 'fog') {
+      // Gas layer gets the bulk of the water
+      totalWaterApplied = gps * dt * strengthMul;
+    }
 
-        // Rotate offset into ellipse-local coords (aligned with spray direction)
-        const lx = offX * cosA - offZ * sinA;
-        const ly = offX * sinA + offZ * cosA;
+    {
+      // Cell suppression: full strength for direct, reduced for fog
+      // Fog distributes water over a wider area at lower density (settled mist).
+      const suppressionMul = mode === 'fog' ? FOG_SURFACE_FRACTION : 1.0;
+      const COOLING_FACTOR = 1;
+      const sprayArea = Math.PI * majorR * minorR;          // sq ft
+      const peakDensity = 3 * gps / sprayArea;              // gal/s/sqft at center
+      const suppressionRate = peakDensity * COOLING_FACTOR * strengthMul * suppressionMul;
 
-        // Elliptical distance: (lx/majorR)^2 + (ly/minorR)^2 <= 1
-        const ellipseDist = (lx * lx) / (majorR * majorR) + (ly * ly) / (minorR * minorR);
-        if (ellipseDist > 1.0) continue;
+      // Shift from hit point to true ellipse center along the spray direction
+      const off = params ? (params.centerOffset || 0) : 0;
+      const sprayX = worldX + Math.cos(angle) * off;
+      const sprayZ = worldZ + Math.sin(angle) * off;
 
-        const falloff = 1.0 - Math.sqrt(ellipseDist);
-        const i = this.idx(gx, gy);
-        const cooled = this.heat[i] - suppressionRate * falloff * dt;
-        this.heat[i] = cooled > 0 ? cooled : 0; // also handles NaN → 0
+      const cosA = Math.cos(-angle);
+      const sinA = Math.sin(-angle);
+      const rMax = Math.ceil(Math.max(majorR, minorR));
 
-        // When water knocks down a cell, transition to suppressed state
-        if (this.heat[i] <= 0 && this.cellState[i] === CELL_BURNING) {
-          this.cellState[i] = CELL_SUPPRESSED;
-          this.heatExposure[i] = 0;
-        }
+      // Grid cell containing the spray center (clamped to valid bounds)
+      const cx = Math.max(0, Math.min(this.cols - 1, Math.floor(sprayX)));
+      const cz = Math.max(0, Math.min(this.rows - 1, Math.floor(sprayZ)));
 
-        // Water cools preheating cells — reduce accumulated heat exposure
-        if (this.cellState[i] === CELL_PREHEATING) {
-          this.heatExposure[i] = Math.max(0, this.heatExposure[i] - suppressionRate * falloff * dt * 10);
-          if (this.heatExposure[i] < 0.5) {
+      // Sub-sample grid: 3×3 points per cell to estimate ellipse coverage.
+      const SUB = 3;
+      const SUB_STEP = 1 / SUB;
+      const SUB_OFFSET = SUB_STEP / 2;
+      const invMajSq = 1 / (majorR * majorR);
+      const invMinSq = 1 / (minorR * minorR);
+
+      for (let dy = -rMax; dy <= rMax; dy++) {
+        for (let dx = -rMax; dx <= rMax; dx++) {
+          const gx = cx + dx;
+          const gy = cz + dy;
+          if (gx < 0 || gx >= this.cols || gy < 0 || gy >= this.rows) continue;
+
+          let falloffSum = 0;
+          for (let sy = 0; sy < SUB; sy++) {
+            for (let sx = 0; sx < SUB; sx++) {
+              const px = gx + SUB_OFFSET + sx * SUB_STEP;
+              const pz = gy + SUB_OFFSET + sy * SUB_STEP;
+              const offX = px - sprayX;
+              const offZ = pz - sprayZ;
+
+              const lx = offX * cosA - offZ * sinA;
+              const ly = offX * sinA + offZ * cosA;
+
+              const ellipseDist = lx * lx * invMajSq + ly * ly * invMinSq;
+              if (ellipseDist <= 1.0) {
+                falloffSum += 1.0 - Math.sqrt(ellipseDist);
+              }
+            }
+          }
+          if (falloffSum === 0) continue;
+
+          const falloff = falloffSum / (SUB * SUB);
+          const i = this.idx(gx, gy);
+          const cooled = this.heat[i] - suppressionRate * falloff * dt;
+          this.heat[i] = cooled > 0 ? cooled : 0;
+
+          if (this.heat[i] <= 0 && this.cellState[i] === CELL_BURNING) {
             this.cellState[i] = CELL_SUPPRESSED;
             this.heatExposure[i] = 0;
           }
+
+          if (this.cellState[i] === CELL_PREHEATING) {
+            this.heatExposure[i] = Math.max(0, this.heatExposure[i] - suppressionRate * falloff * dt * 10);
+            if (this.heatExposure[i] < 0.5) {
+              this.cellState[i] = CELL_SUPPRESSED;
+              this.heatExposure[i] = 0;
+            }
+          }
+
+          const MOISTURE_RATE = 0.16;
+          const waterDensity = peakDensity * falloff * strengthMul;
+          const m = this.moisture[i] + waterDensity * dt * MOISTURE_RATE;
+          this.moisture[i] = m < 1 ? m : 1;
+
+          // In direct mode, track water for incidental gas layer cooling.
+          // In fog mode, gas layer water is already accounted for above.
+          if (mode !== 'fog') {
+            totalWaterApplied += waterDensity * dt;
+          }
         }
-
-        // Accumulate moisture – peak water density × falloff at this cell.
-        // Scaled by MOISTURE_RATE so saturation takes 2-3s of direct spray
-        // per spec §5.4.2 (saturation dwell time).
-        const MOISTURE_RATE = 0.04;
-        const waterDensity = peakDensity * falloff * strengthMul;
-        const m = this.moisture[i] + waterDensity * dt * MOISTURE_RATE;
-        this.moisture[i] = m < 1 ? m : 1;
-
-        totalWaterApplied += waterDensity * dt;
       }
     }
 
-    // Cool the gas layer ("penciling the ceiling", spec §5.6).
-    // Total gallons actually sprayed this tick = GPM/60 × dt.
+    // Cool the gas layer.
     // Each gallon of water: 1 gal = 3.785 kg. Absorbs 2.6 MJ/kg = 9.84 MJ/gal.
-    // dT = -(gallons × 9840 kJ/gal × efficiency) / (m_layer × Cp)
-    // At 150 GPM, 1s burst: 2.5 gal × 9840 × 0.08 / (200 × 1.0) = 9.84°C drop.
-    // Spec says 7-10°C per 1s burst — 8% efficiency accounts for most water
-    // hitting the ceiling surface rather than evaporating in the gas layer.
+    // Fog mode: 15% efficiency — Barnett data shows 75% of 0.35mm fog droplets
+    // evaporate in the gas layer; ~25-40% of nozzle output enters the layer
+    // (Srdqvist 20-60% operational range). Combined: 15-30%.
+    // 15% = mid-range for good technique. At 150 GPM, 1s burst:
+    // 2.5 gal × 9840 × 0.15 / (200 × 1.0) = 18.5°C drop.
+    // Direct mode: 2% efficiency — most water hits surfaces as liquid stream,
+    // only incidental evaporation en route through the gas layer.
     if (totalWaterApplied > 0 && this.gasLayerTemp > AMBIENT_TEMP) {
-      const PENCIL_EFFICIENCY = 0.08; // most water hits ceiling surface, not gas layer
-      const gallonsThisTick = gps * dt; // actual gallons sprayed
-      const coolingKJ = gallonsThisTick * 9840 * PENCIL_EFFICIENCY; // kJ absorbed
+      const efficiency = mode === 'fog' ? 0.15 : 0.02;
+      const coolingKJ = totalWaterApplied * 9840 * efficiency;
       const dT = coolingKJ / (GAS_LAYER_MASS * GAS_CP);
       this.gasLayerTemp = Math.max(AMBIENT_TEMP, this.gasLayerTemp - dT);
     }
@@ -625,11 +649,11 @@ export class FireSimulation {
 
     this.simTime += dt;
 
-    // ── 1. t² HRR target ────────────────────────────────────
-    // The fire's total HRR should follow Q(t) = α · t².
-    // We compute the target HRR for this moment and use it to govern
-    // how hot individual cells can get (capping the feedback loop).
-    const tSquaredHRR = this.growthAlpha * this.simTime * this.simTime; // kW
+    // ── 1. Growth rate ────────────────────────────────────────
+    // The NFPA t² growth coefficient (α) controls how fast individual cells
+    // intensify. Scale the per-cell growth rate relative to the "fast" baseline.
+    // Slow (0.003): 0.064×, Medium (0.012): 0.255×, Fast (0.047): 1.0×, Ultra (0.188): 4.0×
+    const cellGrowthRate = 0.15 * (this.growthAlpha / 0.047);
     const fuelPeak = 5000; // max fuel-controlled HRR (kW) for this room size
 
     // ── 2. Compute actual total HRR from burning cells ──────
@@ -658,30 +682,43 @@ export class FireSimulation {
 
     this.ventLimited = this.oxygenLevel < O2_FLAMING_LIMIT;
 
-    // Effective HRR: min of t² target, fuel peak, ventilation cap, and actual burning output
-    let effectiveHRR = Math.min(totalHRR, tSquaredHRR, fuelPeak);
+    // Actual HRR: what the fire is actually producing. Heats the gas layer,
+    // consumes O₂, and drives ceiling jet spread. Only capped by ventilation.
+    let actualHRR = totalHRR;
     if (this.ventLimited) {
-      effectiveHRR = 0;
-    } else if (ventMaxHRR > 0 && effectiveHRR > ventMaxHRR) {
-      effectiveHRR = ventMaxHRR;
+      actualHRR = 0;
+    } else if (ventMaxHRR > 0) {
+      actualHRR = Math.min(totalHRR, ventMaxHRR);
     }
-    this.totalHRR = effectiveHRR;
+    this.totalHRR = actualHRR;
 
-    // ── 4. O₂ update ────────────────────────────────────────
-    // Spec §4.2: sealed 500 kW fire depletes 20.9%→15% in 5-7 minutes.
-    // The well-mixed calculation gives ~81s — too fast by ~4×.
-    // In reality, fire consumes O₂ from the lower cool layer; stratification
-    // means the effective air mass available for combustion is larger than the
-    // simple room volume suggests (hot upper layer recirculates partially).
-    // A mixing factor of 0.25 calibrates to ~5 minutes at 500 kW.
-    const O2_MIXING_FACTOR = 0.25;
-    const o2ConsumedKg = (effectiveHRR * dt / 1000) * O2_PER_MJ * O2_MIXING_FACTOR;
-    // Convert kg O₂ consumed to absolute change in O₂ percentage of air.
-    // o2ChangePercent = (consumed_kg / total_air_mass) × 100
-    // (NOT divided by O₂ mass — that would give fraction-of-O₂, not pp change)
-    const o2ChangePercent = (o2ConsumedKg / ROOM_AIR_MASS) * 100;
+    const gasTemp = this.gasLayerTemp;
+
+    // ── 4. O₂ update (two-zone model) ──────────────────────
+    // Fire consumes O₂ from the lower cool layer only. The upper hot layer
+    // is O₂-depleted exhaust. The neutral plane divides the room: below it
+    // is the cool lower layer (where firefighters breathe and fire draws air),
+    // above it is the hot upper layer.
+    //
+    // Neutral plane height fraction depends on gas layer temperature:
+    // at ambient, the whole room is "lower layer" (fraction ≈ 1.0);
+    // as the gas heats up, the hot layer descends, compressing the lower layer.
+    // At flashover temps the neutral plane is at ~40% of room height.
+    //
+    // Physics: neutral plane height ≈ H × (1 − ΔT/(ΔT + 300))
+    // where ΔT = gasTemp − ambient. At ΔT=0→1.0, ΔT=300→0.5, ΔT=600→0.33.
+    const deltaT = Math.max(0, gasTemp - AMBIENT_TEMP);
+    const neutralFraction = 1 - deltaT / (deltaT + 300);
+    // Lower layer air mass = fraction × total room air mass
+    const lowerLayerMass = ROOM_AIR_MASS * Math.max(0.2, neutralFraction);
+
+    // O₂ consumption: Huggett's constant (13.1 MJ per kg O₂ consumed)
+    const o2ConsumedKg = (actualHRR * dt / 1000) * O2_PER_MJ;
+    // Track O₂ in the lower layer where fire burns
+    const o2ChangePercent = (o2ConsumedKg / lowerLayerMass) * 100;
     this.oxygenLevel -= o2ChangePercent;
 
+    // Fresh air inflow through openings replenishes O₂
     let airInflowKgPerSec = 0;
     for (const d of doors) {
       airInflowKgPerSec += 0.5 * DOOR_AREA_M2 * Math.sqrt(DOOR_HEIGHT_M);
@@ -690,7 +727,7 @@ export class FireSimulation {
       airInflowKgPerSec += 0.5 * VENT_AREA_M2 * Math.sqrt(0.5);
     }
     const freshO2Kg = airInflowKgPerSec * dt * (AMBIENT_O2 / 100);
-    const o2ReplenishPercent = (freshO2Kg / ROOM_AIR_MASS) * 100;
+    const o2ReplenishPercent = (freshO2Kg / lowerLayerMass) * 100;
     this.oxygenLevel = Math.max(0, Math.min(AMBIENT_O2, this.oxygenLevel + o2ReplenishPercent));
 
     // ── 5. Ceiling jet preheating (Alpert correlations) ─────
@@ -708,7 +745,10 @@ export class FireSimulation {
 
     // Corner fire 4× HRR boost for Alpert (spec §3.3: mirror-image reflections)
     // If fire centroid is within 2 cells of a corner, apply the virtual fire multiplier
-    let alpertHRR = effectiveHRR;
+    // Ceiling jet uses actual HRR — it's a physical consequence of what's
+    // burning, not limited by the t² growth curve. The t² curve governs
+    // how fast individual cells ramp up, not how hot the ceiling jet is.
+    let alpertHRR = actualHRR;
     if (fireWeight > 0) {
       const nearLeft = fireCX < 2;
       const nearRight = fireCX > cols - 3;
@@ -720,10 +760,24 @@ export class FireSimulation {
     }
 
     // Constants
-    const EVAP_RATE = 0.012;  // base rate: full saturation dries in ~80s (spec §5.5.1: 60-90s)
-    const GROWTH_DAMPEN = 0.85;
+    const EVAP_RATE = 0.012;  // base ambient evap rate (passive drying)
+    const EVAP_ENERGY = 200;  // kJ to evaporate one unit of moisture (m: 0→1)
+                              // Physics: 0.1 kg water/ft² × 2,260 kJ/kg ≈ 226 kJ
+                              // At 3.6 kW from 3 neighbors: ~56s to fully dry
     const IGNITION_THRESHOLD_KJ = 20; // kJ (spec: 15-25 kJ)
-    const gasTemp = this.gasLayerTemp;
+
+    // Radiative view factors for coplanar 1ft² squares on ceiling grid.
+    // From published tables (Howell, "A Catalog of Radiation Heat Transfer
+    // Configuration Factors", 3rd ed.) for parallel coplanar squares.
+    // Key: dx²+dy² → view factor F₁₂
+    const VIEW_FACTOR = { 1: 0.20, 2: 0.12, 4: 0.07, 5: 0.04, 8: 0.02 };
+
+    // Stefan-Boltzmann radiation: Q = ε·σ·F·A·(T⁴_hot − T⁴_cold)
+    // ε=0.9 (typical ceiling material), σ=5.67e-8 W/(m²·K⁴), A=0.093 m² (1 ft²)
+    // Combined constant: ε·σ·A = 4.75e-9 kW/K⁴
+    const RAD_COEFF = 0.9 * 5.67e-8 * 0.093 * 1e-3; // 4.75e-12 kW/K⁴ (σ is W, sim uses kW)
+    const T_AMB = 293; // K (20°C)
+    const T_AMB_4 = T_AMB * T_AMB * T_AMB * T_AMB;
 
     // ── 6. Per-cell update ───────────────────────────────────
 
@@ -744,8 +798,10 @@ export class FireSimulation {
           evapRate = Math.max(evapRate, EVAP_RATE * 0.05);
           m = Math.max(0, m - evapRate * dt);
           // Suppressed cell dries out → becomes unignited (can be preheated again)
+          // Reset exposure: the cell was cooled and wetted, accumulated heat is gone
           if (state === CELL_SUPPRESSED && m < 0.01) {
             state = CELL_UNIGNITED;
+            exposure = 0;
           }
         }
 
@@ -755,59 +811,130 @@ export class FireSimulation {
           if (h <= 0) state = CELL_UNIGNITED;
         }
 
-        // ── BURNING cells: intensify ──
+        // ── BURNING cells: intensify or cool from moisture ──
+        // Same evaporation-first physics as non-burning cells:
+        // the cell's own combustion heat must evaporate moisture before
+        // it can sustain fire growth. A wet cell's energy goes into
+        // boiling water, not feeding flames.
         if (state === CELL_BURNING) {
           if (this.ventLimited) {
             h = Math.max(0, h - 0.02 * dt);
             if (h <= 0) state = CELL_UNIGNITED; // smouldered out
           } else {
-            h = Math.min(1.0, h + 0.15 * dt * (1.0 - h) * (1.0 - m * GROWTH_DAMPEN));
+            // Cell's combustion output (kW)
+            const cellHRR = h * CELL_HRR_MAX;
+
+            // Evaporation-first: only applies when moisture is substantial
+            // (≥5%). Trace moisture (<5%) evaporates instantly on a burning
+            // surface and doesn't meaningfully impede combustion. Below this
+            // threshold, applyWater's direct heat reduction is the primary
+            // cooling mechanism; moisture accumulates for post-suppression
+            // reignition protection.
+            let netFraction = 1;
+            if (m >= 0.05) {
+              let netHRR = cellHRR;
+              const evapFromBurn = Math.min(m, cellHRR * dt / EVAP_ENERGY);
+              m -= evapFromBurn;
+              netHRR -= evapFromBurn * EVAP_ENERGY / dt;
+              if (netHRR < 0) netHRR = 0;
+              netFraction = cellHRR > 0 ? netHRR / cellHRR : 1;
+            }
+
+            if (netFraction > 0) {
+              // Fire can sustain — grow proportional to remaining energy
+              h = Math.min(1.0, h + cellGrowthRate * dt * (1.0 - h) * netFraction);
+            } else {
+              // All energy went to evaporation — fire decays
+              h = Math.max(0, h - 0.1 * dt);
+            }
           }
-          if (h < 0.02) {
+          if (h <= 0) {
+            state = CELL_SUPPRESSED;
+            exposure = 0;
+          } else if (h < 0.02) {
             h = Math.max(0, h - 0.05 * dt);
-            if (h <= 0) state = CELL_UNIGNITED;
+            if (h <= 0) {
+              state = CELL_SUPPRESSED;
+              exposure = 0;
+            }
           }
 
-          // Neighbor diffusion: burning cell heats up toward hotter neighbors
-          if (!this.ventLimited) {
-            let neighborHeat = 0, nCount = 0;
-            for (let ny = y - 1; ny <= y + 1; ny++) {
-              for (let nx = x - 1; nx <= x + 1; nx++) {
+          // Neighbor radiant heating: hotter neighbors boost this cell's heat.
+          // Uses same Stefan-Boltzmann + view factor model.
+          // Net radiant input from neighbors that are hotter than this cell.
+          if (!this.ventLimited && state === CELL_BURNING) {
+            const T_self = T_AMB + h * 780;
+            const T_self_4 = T_self * T_self * T_self * T_self;
+            let radiantInput = 0;
+            for (let ny = y - 2; ny <= y + 2; ny++) {
+              for (let nx = x - 2; nx <= x + 2; nx++) {
                 if (nx === x && ny === y) continue;
                 if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
                 const nh = heat[ny * cols + nx];
-                if (nh > 0) { neighborHeat += nh; nCount++; }
+                if (nh <= h) continue; // only hotter neighbors contribute
+                const d2 = (nx - x) * (nx - x) + (ny - y) * (ny - y);
+                const vf = VIEW_FACTOR[d2];
+                if (!vf) continue;
+                const T_n = T_AMB + nh * 780;
+                const T_n_4 = T_n * T_n * T_n * T_n;
+                radiantInput += RAD_COEFF * vf * (T_n_4 - T_self_4);
               }
             }
-            if (nCount > 0) {
-              const avg = neighborHeat / nCount;
-              const d = avg - h;
-              if (d > 0) h += d * 0.3 * dt * (1.0 - m * GROWTH_DAMPEN);
+            // Convert radiant kW to heat increase (normalized by cell HRR capacity)
+            if (radiantInput > 0) {
+              // Radiant input goes through evaporation first
+              if (m > 0) {
+                const evapFromRad = Math.min(m, radiantInput * dt / EVAP_ENERGY);
+                m -= evapFromRad;
+                radiantInput -= evapFromRad * EVAP_ENERGY / dt;
+                if (radiantInput < 0) radiantInput = 0;
+              }
+              h += (radiantInput / CELL_HRR_MAX) * dt;
+              h = Math.min(1.0, h);
             }
           }
           exposure = 0; // burning cells don't accumulate exposure
         }
 
         // ── NON-BURNING cells: accumulate heat exposure ──
+        // Physics: incoming heat must first evaporate moisture (latent heat
+        // of vaporization). Only after the surface is dry can temperature
+        // rise toward ignition. Water at 100°C absorbs ~2,260 kJ/kg;
+        // no ignition is possible while liquid water remains.
         if (state !== CELL_BURNING && !this.ventLimited) {
-          let exposureRate = 0;
+          let incomingHeat = 0;
 
-          // (a) Radiant heat from adjacent burning cells
-          for (let ny = y - 1; ny <= y + 1; ny++) {
-            for (let nx = x - 1; nx <= x + 1; nx++) {
+          // (a) Radiant heat from nearby burning cells (radius 2)
+          // Uses Stefan-Boltzmann law with geometric view factors for
+          // coplanar 1ft² squares.
+          // T_cell = 293 + h × 780 K (linear: h=0→20°C, h=1→800°C)
+          let hasBurningNeighbor = false;
+          for (let ny = y - 2; ny <= y + 2; ny++) {
+            for (let nx = x - 2; nx <= x + 2; nx++) {
               if (nx === x && ny === y) continue;
               if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
               if (cellState[ny * cols + nx] !== CELL_BURNING) continue;
               const nh = heat[ny * cols + nx];
-              if (nh > 0) {
-                const dist = (nx !== x && ny !== y) ? 1.414 : 1.0;
-                exposureRate += nh * 1.5 / dist;
-              }
+              if (nh <= 0) continue;
+              hasBurningNeighbor = true;
+              const d2 = (nx - x) * (nx - x) + (ny - y) * (ny - y);
+              const vf = VIEW_FACTOR[d2];
+              if (!vf) continue;
+              const T = T_AMB + nh * 780;
+              const T4 = T * T * T * T;
+              incomingHeat += RAD_COEFF * vf * (T4 - T_AMB_4);
             }
           }
 
-          // (b) Ceiling jet preheating (Alpert) — dry cells only
-          if (alpertHRR > 10 && fireWeight > 0 && m < 0.1) {
+          // (b) Ceiling jet preheating (Alpert) — only if fire is nearby.
+          // The ceiling jet accelerates spread near the fire front but cannot
+          // ignite remote cells with no burning neighbors.
+          //
+          // Directional bias: room airflow deflects the ceiling jet toward
+          // the outlet (vents/doors). The jet is hotter and faster downwind
+          // (concurrent with airflow) and cooler upwind (opposed).
+          // Spec §4.4: concurrent spread 2-5× faster than still-air rate.
+          if (hasBurningNeighbor && alpertHRR > 10 && fireWeight > 0) {
             const dx = x - fireCX;
             const dy = y - fireCY;
             const rFt = Math.sqrt(dx * dx + dy * dy);
@@ -819,18 +946,44 @@ export class FireSimulation {
             } else {
               ceilingJetDT = 5.38 * Math.pow(alpertHRR / rM, 2/3) / ROOM_H_M;
             }
+
+            // Airflow deflection: scale ceiling jet based on whether this cell
+            // is downwind (concurrent) or upwind (opposed) from the fire.
+            if (hasAirflow && rFt > 0.5) {
+              const ai2 = (y * cols + x) * 2;
+              const avx2 = airflow[ai2];
+              const avy2 = airflow[ai2 + 1];
+              const aMag = Math.sqrt(avx2 * avx2 + avy2 * avy2);
+              if (aMag > 0.01) {
+                // dot > 0 = cell is downwind of fire (airflow pushes jet toward cell)
+                // dot < 0 = cell is upwind (airflow pushes jet away from cell)
+                const dirX = dx / rFt, dirY = dy / rFt;
+                const dot = dirX * (avx2 / aMag) + dirY * (avy2 / aMag);
+                // Concurrent: up to 1.8× jet temperature (airflow boosts velocity
+                // more than temperature; ~80% increase is realistic for strong flow).
+                // Opposed: down to 0.4× (jet fights against incoming air).
+                const jetBias = 1.0 + dot * 0.8; // range: 0.2..1.8
+                ceilingJetDT *= Math.max(0.4, Math.min(1.8, jetBias));
+              }
+            }
+
             if (ceilingJetDT > 150) {
-              exposureRate += (ceilingJetDT - 150) * 0.01;
+              incomingHeat += (ceilingJetDT - 150) * 0.01;
             }
           }
 
-          // (c) Gas layer radiation (spec §5.5.2) — dry cells above 500°C
-          if (gasTemp > REIGNITION_TEMP && m < 0.3) {
-            exposureRate += (gasTemp - REIGNITION_TEMP) * 0.01;
+          // (c) Gas layer convective heating — ceiling is immersed in hot gas.
+          // Natural convection: h_c ≈ 15 W/(m²·K), cell area = 0.093 m².
+          // q = h_c × A × (T_gas − T_surface) [kW]
+          // T_surface for a non-burning cell ≈ ambient (or higher if preheating).
+          if (gasTemp > AMBIENT_TEMP + 10) {
+            const surfaceTemp = 20 + (exposure / IGNITION_THRESHOLD_KJ) * 330;
+            const gasConvection = 0.015 * 0.093 * Math.max(0, gasTemp - surfaceTemp) * 1e-3;
+            incomingHeat += gasConvection;
           }
 
-          // (d) Airflow directional bonus/penalty (spec §4.4)
-          if (hasAirflow && exposureRate > 0) {
+          // Airflow directional bonus/penalty (spec §4.4)
+          if (hasAirflow && incomingHeat > 0) {
             const ai = (y * cols + x) * 2;
             const avx = airflow[ai];
             const avy = airflow[ai + 1];
@@ -849,36 +1002,51 @@ export class FireSimulation {
                   else if (dot < -0.3) { opposedPenalty += Math.abs(dot); oCount++; }
                 }
               }
-              if (cCount > 0) exposureRate *= (1.0 + (concurrentBonus / cCount) * 2.0);
-              if (oCount > 0 && cCount === 0) exposureRate *= Math.max(0.2, 1.0 - (opposedPenalty / oCount) * 0.7);
+              // Spec §4.4: concurrent 2-5× faster, opposed 0.3-0.5× of still-air
+              // These multiply the radiant exposure rate → directly scale ignition time.
+              if (cCount > 0) incomingHeat *= (1.0 + (concurrentBonus / cCount) * 2.5);
+              if (oCount > 0 && cCount === 0) incomingHeat *= Math.max(0.3, 1.0 - (opposedPenalty / oCount) * 0.6);
             }
           }
 
           // Apply edge multiplier (spec §3.2)
-          exposureRate *= edgeMul[i];
+          incomingHeat *= edgeMul[i];
 
-          // Moisture resists preheating (spec §5.5.1)
-          exposureRate *= (1.0 - m * 0.95);
+          // ── Evaporation-first: heat must dry moisture before raising temperature ──
+          if (m > 0 && incomingHeat > 0) {
+            // Energy absorbed by evaporation this tick
+            const evapFromHeat = Math.min(m, incomingHeat * dt / EVAP_ENERGY);
+            m -= evapFromHeat;
+            // Subtract evaporated energy from incoming heat
+            incomingHeat -= evapFromHeat * EVAP_ENERGY / dt;
+            if (incomingHeat < 0) incomingHeat = 0;
+          }
 
-          // Accumulate exposure (kW × dt = kJ)
-          if (exposureRate > 0) {
-            exposure += exposureRate * dt;
-            // Transition to PREHEATING when exposure starts accumulating
+          // Only heat remaining AFTER evaporation raises temperature toward ignition
+          if (incomingHeat > 0) {
+            exposure += incomingHeat * dt;
             if (state === CELL_UNIGNITED && exposure > 0.5) {
               state = CELL_PREHEATING;
             }
           }
 
-          // Wet cells cool down (exposure decays)
-          if (m > 0.5 && exposureRate <= 0) {
-            exposure = Math.max(0, exposure - 2 * dt);
+          // Surface cooling: exposure decays when heat source is removed.
+          // A preheated surface radiates and convects heat back to the
+          // environment. Wet surfaces cool faster (evaporative cooling).
+          if (exposure > 0) {
+            // Passive cooling: ~1 kJ/s radiation/convection to ambient
+            // Wet bonus: moisture adds up to 4 kJ/s evaporative cooling
+            const passiveCooling = 1.0 + m * 4.0;
+            exposure = Math.max(0, exposure - passiveCooling * dt);
             if (exposure < 0.5 && state === CELL_PREHEATING) {
               state = CELL_UNIGNITED;
             }
           }
 
           // Deterministic ignition when threshold reached (spec §3.4)
-          if (exposure >= IGNITION_THRESHOLD_KJ) {
+          // Requires at least one burning cell within radius 2 — fire
+          // spreads from cell to cell, never spontaneously across the room.
+          if (exposure >= IGNITION_THRESHOLD_KJ && hasBurningNeighbor) {
             h = 0.05 + 0.05 * Math.min(1, (exposure - IGNITION_THRESHOLD_KJ) / 5);
             state = CELL_BURNING;
             exposure = 0;
@@ -897,7 +1065,7 @@ export class FireSimulation {
     this.nextHeat = tmp;
 
     // ── 7. Gas layer temperature update ─────────────────────
-    this._updateGasLayer(dt, effectiveHRR);
+    this._updateGasLayer(dt, actualHRR);
 
     // ── 8. Win/lose conditions ───────────────────────────────
     this._checkWinLose(dt);
@@ -926,38 +1094,21 @@ export class FireSimulation {
     temp = Math.max(AMBIENT_TEMP, Math.min(1200, temp));
     this.gasLayerTemp = temp;
 
-    // Flashover check: sustained gas layer temp > FLASHOVER_TEMP for 5 seconds
-    if (temp > FLASHOVER_TEMP) {
-      this.flashoverTimer += dt;
-      if (this.flashoverTimer >= 5 && !this.flashedOver) {
-        this.flashedOver = true;
-        this._triggerFlashover();
-      }
-    } else {
-      this.flashoverTimer = 0;
-    }
-  }
-
-  /** Flashover: rapidly ignite all remaining cells. */
-  _triggerFlashover() {
-    const total = this.cols * this.rows;
-    for (let i = 0; i < total; i++) {
-      if (this.cellState[i] !== CELL_BURNING) {
-        this.heat[i] = 0.5 + Math.random() * 0.3;
-        this.cellState[i] = CELL_BURNING;
-        this.heatExposure[i] = 0;
-      }
-    }
   }
 
   /** Check win/lose conditions each tick. */
   _checkWinLose(dt) {
     if (this.gameState !== 'running') return;
 
-    // Lose: flashover
-    if (this.flashedOver) {
-      this.gameState = 'lose_flashover';
-      return;
+    // Lose: gas layer too hot (untenable for firefighter)
+    if (this.gasLayerTemp > UNTENABLE_TEMP) {
+      this.flashoverTimer += dt;
+      if (this.flashoverTimer >= 5) {
+        this.gameState = 'lose_flashover';
+        return;
+      }
+    } else {
+      this.flashoverTimer = 0;
     }
 
     // Lose: oxygen depleted (IDLH atmosphere)
@@ -1047,7 +1198,6 @@ export class FireSimulation {
       gasLayerTemp: this.gasLayerTemp,
       totalHRR: this.totalHRR,
       oxygenLevel: this.oxygenLevel,
-      flashedOver: this.flashedOver,
       flashoverTimer: this.flashoverTimer,
       ventLimited: this.ventLimited,
       gameState: this.gameState,
@@ -1065,7 +1215,6 @@ export class FireSimulation {
     this.gasLayerTemp = snap.gasLayerTemp;
     this.totalHRR = snap.totalHRR;
     this.oxygenLevel = snap.oxygenLevel;
-    this.flashedOver = snap.flashedOver;
     this.flashoverTimer = snap.flashoverTimer;
     this.ventLimited = snap.ventLimited;
     this.gameState = snap.gameState;

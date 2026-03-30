@@ -38,22 +38,4 @@ if (scene) {
   scene.add(fireLight);
 }
 
-// Gas layer plane — translucent horizontal sheet representing hot gas / smoke layer
-let gasLayerPlane = null;
-if (scene) {
-  const gasGeo = new THREE.PlaneGeometry(ROOM_W, ROOM_D);
-  const gasMat = new THREE.MeshBasicMaterial({
-    color: 0x808080,
-    transparent: true,
-    opacity: 0,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  gasLayerPlane = new THREE.Mesh(gasGeo, gasMat);
-  gasLayerPlane.rotation.x = -Math.PI / 2;
-  gasLayerPlane.position.set(ROOM_W / 2, ROOM_H, ROOM_D / 2);
-  gasLayerPlane.renderOrder = 999;
-  scene.add(gasLayerPlane);
-}
-
-export { container, scene, camera, renderer, fireLight, gasLayerPlane };
+export { container, scene, camera, renderer, fireLight };

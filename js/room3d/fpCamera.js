@@ -241,11 +241,14 @@ function computeStartPosition(sim) {
 export function updateCamera(sim) {
   if (!camera || !fpPosition || !fpClock || !fpEnabled) return;
 
-  // Recompute start position when vents change
+  // Recompute start position when vents/doors change (including late-arriving scenario data)
   const ventKey = sim ? JSON.stringify(sim.vents) : '';
   if (ventKey !== lastVentKeyForStart) {
+    const hadDoors = lastVentKeyForStart && JSON.parse(lastVentKeyForStart || '[]').some(v => v.type === 'door');
     lastVentKeyForStart = ventKey;
-    if (!startPositionComputed) {
+    const hasDoors = sim && sim.vents && sim.vents.some(v => v.type === 'door');
+    // Always recompute if: first time, or doors were just added (scenario arrived)
+    if (!startPositionComputed || (hasDoors && !hadDoors)) {
       computeStartPosition(sim);
       startPositionComputed = true;
     }

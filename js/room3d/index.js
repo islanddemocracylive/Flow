@@ -7,8 +7,8 @@
 
 import { ROOM_W, ROOM_D, ROOM_H, DOOR_H } from '../constants.js';
 import { cellToColor } from '../colorUtils.js';
-import { container, scene, camera, renderer, fireLight, gasLayerPlane } from './scene.js';
-import { FLASHOVER_TEMP, AMBIENT_TEMP } from '../constants.js';
+import { container, scene, camera, renderer, fireLight } from './scene.js';
+import { AMBIENT_TEMP } from '../constants.js';
 import { buildWalls, wallGroup, doorFrameGroup } from './walls.js';
 import { panelMeshes } from './ceiling.js';
 import { buildVentMeshes } from './vents.js';
@@ -110,43 +110,6 @@ const room3d = {
       }
     }
 
-    // Update gas layer plane (descending smoke sheet)
-    if (gasLayerPlane) {
-      const temp = sim.gasLayerTemp || AMBIENT_TEMP;
-      if (temp < 100) {
-        gasLayerPlane.material.opacity = 0;
-        gasLayerPlane.visible = false;
-      } else {
-        gasLayerPlane.visible = true;
-        // Opacity: 0 at 100°C → 0.5 at 600°C+
-        const tNorm = Math.min(1, (temp - 100) / 500);
-        gasLayerPlane.material.opacity = tNorm * 0.5;
-
-        // Y position: gas layer hugs the ceiling during early growth, then
-        // drops rapidly in the danger zone (400°C+). Uses a quadratic curve
-        // so the layer barely descends until temps are high.
-        // At flashover (600°C): layer is at ~55% of room height (~5 ft),
-        // just below eye level. Post-flashover it can drop further.
-        const yTop = ROOM_H;
-        const yBottom = ROOM_H * 0.55; // ~5 ft — just below eye level at flashover
-        const dropFraction = tNorm * tNorm; // quadratic: slow start, fast near flashover
-        gasLayerPlane.position.y = yTop - dropFraction * (yTop - yBottom);
-
-        // Color: gray → brown → orange → red
-        if (temp < 300) {
-          gasLayerPlane.material.color.setRGB(0.5, 0.5, 0.5);
-        } else if (temp < 500) {
-          const t2 = (temp - 300) / 200;
-          gasLayerPlane.material.color.setRGB(0.5 + t2 * 0.05, 0.5 - t2 * 0.03, 0.5 - t2 * 0.15);
-        } else if (temp < FLASHOVER_TEMP) {
-          const t2 = (temp - 500) / 100;
-          gasLayerPlane.material.color.setRGB(0.55 + t2 * 0.15, 0.47 - t2 * 0.08, 0.35 - t2 * 0.2);
-        } else {
-          const t2 = Math.min(1, (temp - FLASHOVER_TEMP) / 200);
-          gasLayerPlane.material.color.setRGB(0.7 + t2 * 0.16, 0.39 - t2 * 0.08, 0.15 - t2 * 0.08);
-        }
-      }
-    }
   },
 
   /** Render the 3D scene with first-person camera (for viewer) */

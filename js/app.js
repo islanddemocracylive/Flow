@@ -40,7 +40,16 @@ try {
     remoteWater = {
       worldX: msg.worldX,
       worldZ: msg.worldZ,
-      playerPos: { x: msg.playerX, z: msg.playerZ },
+      playerPos: { x: msg.playerX, y: msg.playerY, z: msg.playerZ },
+      // Pre-computed spray params from viewer (avoids wrong surface/nozzleY recalculation)
+      sprayParams: (msg.majorR != null) ? {
+        majorR: msg.majorR,
+        minorR: msg.minorR,
+        sprayAngle: msg.sprayAngle,
+        strengthFactor: msg.strengthFactor,
+        centerOffset: msg.centerOffset,
+        mode: msg.mode || 'direct',
+      } : null,
       lastSeen: performance.now(),
     };
   };
@@ -319,12 +328,12 @@ function loop(now) {
     sim.step(dt);
     // Periodic snapshot for rewind support
     if (window._flowStateSnapshot) window._flowStateSnapshot();
-  }
 
-  // Apply remote water sprays from viewer clients (server owns the sim clock)
-  if (remoteWater && now - remoteWater.lastSeen < 200) {
-    const rw = remoteWater;
-    sim.applyWater(rw.worldX, rw.worldZ, dt, rw.playerPos);
+    // Apply remote water sprays from viewer clients (only while sim is running)
+    if (remoteWater && now - remoteWater.lastSeen < 200) {
+      const rw = remoteWater;
+      sim.applyWater(rw.worldX, rw.worldZ, dt, rw.playerPos, rw.sprayParams);
+    }
   }
 
   render2D(sim, state);

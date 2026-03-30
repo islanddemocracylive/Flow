@@ -141,6 +141,24 @@ export function render2D(sim, state) {
     }
   }
 
+  // Heat vignette overlay (uniform red tint with subtle edge darkening)
+  if (sim.gasLayerTemp > 100) {
+    const lo = 100, hi = 260;
+    const t = Math.min(Math.max((sim.gasLayerTemp - lo) / (hi - lo), 0), 1);
+    const cx = offsetX + gridW / 2, cy = offsetY + gridH / 2;
+    const r = Math.max(gridW, gridH) * 0.75;
+    const tintAlpha = t * 0.25;
+    const edgeAlpha = t * 0.45;
+    const midAlpha = (tintAlpha + edgeAlpha) / 2;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0, `rgba(180,30,0,${tintAlpha.toFixed(3)})`);
+    grad.addColorStop(0.30, `rgba(180,30,0,${tintAlpha.toFixed(3)})`);
+    grad.addColorStop(0.65, `rgba(170,25,0,${midAlpha.toFixed(3)})`);
+    grad.addColorStop(1, `rgba(160,20,0,${edgeAlpha.toFixed(3)})`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(offsetX, offsetY, gridW, gridH);
+  }
+
   // Gas layer HUD (top-right of grid)
   if (state.playing) {
     const hudX = offsetX + gridW - 8;
@@ -149,14 +167,15 @@ export function render2D(sim, state) {
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
 
-    // Gas layer temp
-    const temp = Math.round(sim.gasLayerTemp);
-    const gl = gasLayerColor(sim.gasLayerTemp);
-    const tempColor = temp > 500 ? `rgb(${gl.r},${gl.g},${gl.b})`
-      : temp > 300 ? 'rgba(255,200,100,0.9)'
+    // Gas layer temp (display in Fahrenheit)
+    const tempC = sim.gasLayerTemp;
+    const tempF = Math.round(tempC * 9 / 5 + 32);
+    const gl = gasLayerColor(tempC);
+    const tempColor = tempC > 500 ? `rgb(${gl.r},${gl.g},${gl.b})`
+      : tempC > 300 ? 'rgba(255,200,100,0.9)'
       : 'rgba(200,200,200,0.7)';
     ctx.fillStyle = tempColor;
-    ctx.fillText(`Gas: ${temp}°C`, hudX, hudY);
+    ctx.fillText(`Air Temp: ${tempF}°F`, hudX, hudY);
 
     // HRR
     const hrr = sim.totalHRR / 1000;
@@ -182,7 +201,7 @@ export function render2D(sim, state) {
   if (sim.gameState === 'win' || sim.gameState === 'lose_flashover' || sim.gameState === 'lose_oxygen') {
     const overlays = {
       win: { text: 'FIRE SUPPRESSED', color: 'rgba(40,180,60,0.85)', bg: 'rgba(0,40,0,0.4)' },
-      lose_flashover: { text: 'FLASHOVER', color: 'rgba(255,80,20,0.95)', bg: 'rgba(60,10,0,0.5)' },
+      lose_flashover: { text: 'UNTENABLE CONDITIONS', color: 'rgba(255,80,20,0.95)', bg: 'rgba(60,10,0,0.5)' },
       lose_oxygen: { text: 'OXYGEN DEPLETED', color: 'rgba(100,160,255,0.95)', bg: 'rgba(0,10,40,0.5)' },
     };
     const o = overlays[sim.gameState];

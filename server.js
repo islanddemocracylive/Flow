@@ -1,3 +1,4 @@
+require('dotenv').config();
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -11,24 +12,29 @@ const PORT = process.env.PORT || 8080;
 const AUTH_USERNAME = process.env.AUTH_USERNAME || 'admin';
 const AUTH_PASSWORD = process.env.AUTH_PASSWORD || 'changeme';
 
-// In-memory session store: token → { createdAt }
-const sessions = new Map();
+// HMAC-signed session tokens — survive server restarts (no server-side state)
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
+const SESSION_SECRET = AUTH_PASSWORD; // HMAC key derived from admin password
+
+// Revoked tokens (only needed for explicit logout within this process lifetime)
+const revokedTokens = new Set();
 
 function createSession() {
-  const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { createdAt: Date.now() });
-  return token;
+  const createdAt = Date.now().toString();
+  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(createdAt).digest('hex');
+  return `${createdAt}.${sig}`;
 }
 
 function isValidSession(token) {
   if (!token) return false;
-  const session = sessions.get(token);
-  if (!session) return false;
-  if (Date.now() - session.createdAt > SESSION_MAX_AGE) {
-    sessions.delete(token);
-    return false;
-  }
+  if (revokedTokens.has(token)) return false;
+  const dotIdx = token.indexOf('.');
+  if (dotIdx === -1) return false;
+  const createdAt = token.slice(0, dotIdx);
+  const sig = token.slice(dotIdx + 1);
+  const expected = crypto.createHmac('sha256', SESSION_SECRET).update(createdAt).digest('hex');
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return false;
+  if (Date.now() - Number(createdAt) > SESSION_MAX_AGE) return false;
   return true;
 }
 
@@ -198,9 +204,15 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ── Auth check for everything else ─────────────────────
+  // ── Public paths (viewer + static assets) ──────────────
+  // Viewer page and all JS/CSS/image assets are public (no login).
+  // Only the admin page (index.html / /) and API endpoints require auth.
+  const isAdminPage = pathname === '/' || pathname === '/index.html';
+  const isProtectedAPI = pathname.startsWith('/api/') && pathname !== '/api/login';
+  const needsAuth = isAdminPage || isProtectedAPI;
+
   const token = getSessionToken(req);
-  if (!isValidSession(token)) {
+  if (needsAuth && !isValidSession(token)) {
     if (pathname.startsWith('/api/')) {
       sendJSON(res, 401, { error: 'Not authenticated' });
     } else {
@@ -212,7 +224,7 @@ const server = http.createServer(async (req, res) => {
 
   // ── Logout ─────────────────────────────────────────────
   if (pathname === '/api/logout' && req.method === 'POST') {
-    sessions.delete(token);
+    revokedTokens.add(token);
     res.writeHead(200, {
       'Content-Type': 'application/json',
       'Set-Cookie': 'flow_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0',
@@ -351,10 +363,7 @@ const viewers = new Set();
 
 wss.on('connection', (ws, req) => {
   const token = parseCookies(req.headers.cookie).flow_session;
-  if (!isValidSession(token)) {
-    ws.close(4001, 'Not authenticated');
-    return;
-  }
+  const authed = isValidSession(token);
 
   let role = null;
 
@@ -363,6 +372,11 @@ wss.on('connection', (ws, req) => {
       try {
         const msg = JSON.parse(data.toString());
         if (msg.type === 'register') {
+          // Controllers (admin) require auth; viewers are public
+          if (msg.role === 'controller' && !authed) {
+            ws.close(4001, 'Not authenticated');
+            return;
+          }
           role = msg.role;
           if (role === 'controller') controllers.add(ws);
           else viewers.add(ws);

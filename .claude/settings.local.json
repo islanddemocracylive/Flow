@@ -5,7 +5,20 @@
       "Bash(git commit:*)",
       "Bash(__NEW_LINE_98fd66ad19a602c1__ The debug cone wireframe now starts from a 1.75\" diameter circle:*)",
       "Bash(grep -o \"\"result\"\":\"\"[^\"\"]*\"\" /Users/island/.claude/projects/-Users-island-Cowork-flow-state/68aac539-c060-4698-a538-2005fd71b20f/tool-results/b4pqzkvw6.txt)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(npm install:*)",
+      "Bash(npx vitest:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(xargs kill:*)",
+      "WebSearch",
+      "WebFetch(domain:cfbt-us.com)",
+      "WebFetch(domain:highrisefire.co.uk)",
+      "WebFetch(domain:nipv.nl)",
+      "WebFetch(domain:www.firehouse.com)",
+      "WebFetch(domain:nozzleforward.com)",
+      "WebFetch(domain:www.fire.eng.ed.ac.uk)",
+      "WebFetch(domain:commandcompetence.com)",
+      "WebFetch(domain:www.fireengineering.com)"
     ]
   }
 }

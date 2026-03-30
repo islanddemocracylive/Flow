@@ -191,15 +191,19 @@ export function updateArcDebug(playerPos, hit, sprayPSI) {
   const arcMidY = nozzle.y + vy * tMid - 0.5 * G * tMid * tMid;
   const sag = Math.abs(arcMidY - straightMidY);
 
-  // Piecewise spray spread model matching simulation
+  // Spray spread model matching simulation (uses actual sim settings)
   const totalDist = Math.sqrt(R * R + H * H);
   const NOZZLE_R = 0.042;
-  const MIN_SPLASH_R = 0.5;
-  const tanAlpha = Math.tan(5.0 * Math.PI / 180); // 5° half-angle, waterRadius=2 default
+  const sim = window.fireSim;
+  const waterRadius = sim ? sim.waterRadius : 2;
+  const MIN_SPLASH_R = 0.5 * (waterRadius / 2);
+  const BASE_HALF_ANGLE_DEG = 5.0;
+  const halfAngleDeg = BASE_HALF_ANGLE_DEG * (waterRadius / 2) * Math.sqrt(100 / sprayPSI);
+  const tanAlpha = Math.tan(halfAngleDeg * Math.PI / 180);
   const coneRadius = Math.max(MIN_SPLASH_R, NOZZLE_R + tanAlpha * totalDist);
 
   // Effective fraction: perpendicularity × distance-based droplet fallout
-  const perpFraction = Math.pow(Math.cos(impactAngle), 1.3); // cos^1.3 for realistic grazing falloff
+  const perpFraction = Math.pow(Math.cos(impactAngle), 1.3);
   // Droplet fallout: fine droplets lose momentum at long range (spec strengthFactor)
   const rangeFrac = totalDist / (2.0 * Math.sqrt(sprayPSI));
   const dropoutFraction = rangeFrac > 0.6 ? 1.0 - 0.5 * (rangeFrac - 0.6) / 0.4 : 1.0;
@@ -258,8 +262,14 @@ function _updateOverlay(info) {
     return;
   }
   _ensureOverlay();
-  if (!info) {
+  if (!info && _cellDebugLines.length === 0) {
     debugOverlay.style.display = 'none';
+    return;
+  }
+  if (!info) {
+    // No spray info but we have cell debug — show cell info only
+    debugOverlay.style.display = 'block';
+    debugOverlay.textContent = _cellDebugLines.join('\n');
     return;
   }
   debugOverlay.style.display = 'block';
@@ -280,7 +290,65 @@ function _updateOverlay(info) {
     lines.push(`projected: ${si.projectedArea.toFixed(2)} ft²   ideal: ${si.idealArea.toFixed(2)} ft²`);
     lines.push(`area ratio: ${(si.areaRatio * 100).toFixed(0)}%   attack: ${si.impactAngle.toFixed(1)}°   eff: ${(si.effectiveFraction * 100).toFixed(0)}%`);
   }
+  // Append cell info if available
+  if (_cellDebugLines.length > 0) {
+    lines.push(..._cellDebugLines);
+  }
   debugOverlay.textContent = lines.join('\n');
+}
+
+// ── Cell debug info ──────────────────────────────────────
+
+const STATE_NAMES = ['unignited', 'preheating', 'burning', 'suppressed'];
+let _cellDebugLines = [];
+
+/**
+ * Update cell-under-cursor debug info.
+ * Call every frame when debug mode is active.
+ * Shows heat, moisture, state, and exposure for the cell at (worldX, worldZ).
+ */
+export function updateCellDebug(sim, worldX, worldZ) {
+  if (!enabled || !sim || worldX == null) {
+    _cellDebugLines = [];
+    return;
+  }
+
+  const gx = Math.floor(worldX);
+  const gz = Math.floor(worldZ);
+  if (gx < 0 || gx >= sim.cols || gz < 0 || gz >= sim.rows) {
+    _cellDebugLines = [];
+    return;
+  }
+
+  const i = sim.idx(gx, gz);
+  const heat = sim.heat[i];
+  const moisture = sim.moisture ? sim.moisture[i] : 0;
+  const state = sim.cellState ? STATE_NAMES[sim.cellState[i]] || '?' : '?';
+  const exposure = sim.heatExposure ? sim.heatExposure[i] : 0;
+
+  // Cell surface temperature:
+  // The ceiling is the upper boundary of the hot gas layer, so a cell
+  // can never be cooler than the gas layer it's immersed in.
+  // - Burning cells: heat [0,1] → [20°C, 800°C]
+  // - Preheating cells: exposure [0, 20kJ] → [gasTemp, ~350°C]
+  // - Other cells: gas layer temp (ceiling is IN the hot gas)
+  const gasT = sim.gasLayerTemp || 20;
+  let tempC;
+  if (heat > 0) {
+    tempC = Math.round(Math.max(gasT, 20 + heat * 780));
+  } else if (exposure > 0) {
+    tempC = Math.round(Math.max(gasT, 20 + (exposure / 20) * 330));
+  } else {
+    tempC = Math.round(gasT);
+  }
+  const tempF = Math.round(tempC * 9 / 5 + 32);
+
+  _cellDebugLines = [
+    `───── cell (${gx}, ${gz}) ─────`,
+    `state: ${state}   heat: ${heat.toFixed(3)}`,
+    `temp: ${tempC}°C / ${tempF}°F`,
+    `moisture: ${(moisture * 100).toFixed(1)}%   exposure: ${exposure.toFixed(1)} kJ`,
+  ];
 }
 
 // ── Toggle ───────────────────────────────────────────────
@@ -289,9 +357,9 @@ export function toggleArcDebug() {
   enabled = !enabled;
   if (!enabled) {
     if (arcLine) arcLine.visible = false;
-
     if (debugOverlay) debugOverlay.style.display = 'none';
     lastInfo = null;
+    _cellDebugLines = [];
   }
 }
 

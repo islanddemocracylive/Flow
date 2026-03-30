@@ -302,6 +302,7 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
   if (bLen < 0.01) { _hide(); return; }
   bx /= bLen; by /= bLen; bz /= bLen;
 
+  const isFog = params.mode === 'fog';
   // Disc radius = cone cross-section at hit distance
   const discRadius = params.minorR;
 
@@ -433,19 +434,20 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
   geo.attributes.color.needsUpdate = true;
   geo.computeBoundingSphere();
 
-  sprayMat.opacity = 0.5;
-  sprayIndicator.visible = true;
+  sprayMat.opacity = isFog ? 0 : 0.5;  // hide disc in fog mode
+  sprayIndicator.visible = !isFog;
 
   // --- Spray cone wireframe (full length from nozzle to target) ---
   if (sprayCone && sprayConePositions) {
     const coneLen = bLen;
 
     // Cone shows the true stream geometry (no splash inflation).
-    // Interpolate from nozzle opening to streamRadius at the target.
+    // Fog mode: 2.5x wider cone to visualize the mist pattern.
     const streamR = (params.streamRadius != null) ? params.streamRadius : discRadius;
+    const fogMul = isFog ? 2.5 : 1.0;
     const _coneR = (d) => {
       const frac = coneLen > 0.01 ? d / coneLen : 0;
-      return NOZZLE_RADIUS + (streamR - NOZZLE_RADIUS) * frac;
+      return (NOZZLE_RADIUS + (streamR - NOZZLE_RADIUS) * frac) * fogMul;
     };
 
     // Unit basis vectors perpendicular to beam
@@ -486,6 +488,9 @@ export function showWaterSpray(worldX, worldZ, params, hit, playerPos) {
     while (vi < sprayConePositions.length) sprayConePositions[vi++] = 0;
     sprayCone.geometry.attributes.position.needsUpdate = true;
     sprayCone.geometry.computeBoundingSphere();
+    // Fog: lighter color, higher opacity for mist appearance
+    sprayCone.material.color.setHex(isFog ? 0x99ccff : 0x44aaff);
+    sprayCone.material.opacity = isFog ? 0.35 : 0.2;
     sprayCone.visible = true;
   }
 

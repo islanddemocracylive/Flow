@@ -53,9 +53,9 @@ export class SimNetwork {
     if (this.connected && this.ws.readyState === WebSocket.OPEN) {
       if (!simState) { this.ws.send(float32Array.buffer); return; }
       const n = float32Array.length; // number of cells (heat values)
-      // Layout: [heat × n] [metadata × 4] [cellState × n] [heatExposure × n]
-      const meta = 4;
-      const combined = new Float32Array(n + meta + n + n);
+      // Layout: [heat × n] [metadata × 5] [cellState × n] [heatExposure × n] [moisture × n]
+      const meta = 5;
+      const combined = new Float32Array(n + meta + n + n + n);
       combined.set(float32Array);
       const base = n;
       combined[base] = simState.gasLayerTemp || 0;
@@ -63,12 +63,15 @@ export class SimNetwork {
       const gsMap = { idle: 0, running: 0, win: 1, lose_flashover: 2, lose_oxygen: 3 };
       combined[base + 2] = gsMap[simState.gameState] || 0;
       combined[base + 3] = simState.totalHRR || 0;
-      // Append cellState and heatExposure as floats
+      combined[base + 4] = simState.ventLimited ? 1 : 0;
+      // Append cellState, heatExposure, and moisture as floats
       const csBase = base + meta;
       const exBase = csBase + n;
+      const moBase = exBase + n;
       for (let i = 0; i < n; i++) {
         combined[csBase + i] = simState.cellState ? simState.cellState[i] : 0;
         combined[exBase + i] = simState.heatExposure ? simState.heatExposure[i] : 0;
+        combined[moBase + i] = simState.moisture ? simState.moisture[i] : 0;
       }
       this.ws.send(combined.buffer);
     }
@@ -86,13 +89,22 @@ export class SimNetwork {
     }
   }
 
-  sendWater(worldX, worldZ, playerPos) {
+  sendWater(worldX, worldZ, playerPos, sprayParams) {
     if (this.connected && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({
         type: 'water',
         worldX, worldZ,
         playerX: playerPos.x,
+        playerY: playerPos.y,
         playerZ: playerPos.z,
+        // Send pre-computed spray params so controller doesn't recalculate
+        // with wrong surface/nozzleY assumptions
+        majorR: sprayParams.majorR,
+        minorR: sprayParams.minorR,
+        sprayAngle: sprayParams.sprayAngle,
+        strengthFactor: sprayParams.strengthFactor,
+        centerOffset: sprayParams.centerOffset,
+        mode: sprayParams.mode || 'direct',
       }));
     }
   }

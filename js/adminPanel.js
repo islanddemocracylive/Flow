@@ -238,7 +238,7 @@ export function setupAdminPanel(sim, state, net) {
     }
     lastSnapshotTime = sim.simTime;
     updateTimeButtons();
-    if (net && net.connected) net.sendState(sim);
+    if (net && net.connected) net.sendHeat(sim.heat, sim);
   });
 
   if (btnFfwd) btnFfwd.addEventListener('click', () => {
@@ -249,7 +249,7 @@ export function setupAdminPanel(sim, state, net) {
     sim.fastForward(SKIP_SECONDS);
     lastSnapshotTime = sim.simTime;
     updateTimeButtons();
-    if (net && net.connected) net.sendState(sim);
+    if (net && net.connected) net.sendHeat(sim.heat, sim);
   });
 
   // Expose snapshot-taking for the main loop
@@ -296,14 +296,39 @@ export function setupAdminPanel(sim, state, net) {
     update();
   }
 
-  // Growth rate slider — display as category label
-  function growthLabel(v) {
-    if (v <= 0.006) return 'Slow';
-    if (v <= 0.025) return 'Medium';
-    if (v <= 0.1) return 'Fast';
+  // Growth rate slider — logarithmic scale so NFPA categories are evenly spaced.
+  // Slider 0–100 maps to α 0.003–0.188 via log interpolation.
+  // 0=Slow(0.003), 33=Medium(0.012), 66=Fast(0.047), 100=Ultra-fast(0.188)
+  const ALPHA_MIN = Math.log(0.003);
+  const ALPHA_MAX = Math.log(0.188);
+  function sliderToAlpha(v) {
+    return Math.exp(ALPHA_MIN + (v / 100) * (ALPHA_MAX - ALPHA_MIN));
+  }
+  function alphaToSlider(alpha) {
+    return Math.round((Math.log(alpha) - ALPHA_MIN) / (ALPHA_MAX - ALPHA_MIN) * 100);
+  }
+  function growthLabel(alpha) {
+    if (alpha <= 0.006) return 'Slow';
+    if (alpha <= 0.025) return 'Medium';
+    if (alpha <= 0.1) return 'Fast';
     return 'Ultra-fast';
   }
-  bindSlider('growth-alpha', 'growth-alpha-val', 'growthAlpha', growthLabel);
+  {
+    const slider = document.getElementById('growth-alpha');
+    const display = document.getElementById('growth-alpha-val');
+    if (slider && display) {
+      // Initialize slider position from sim's current alpha
+      slider.value = alphaToSlider(sim.growthAlpha);
+      const update = () => {
+        const alpha = sliderToAlpha(parseFloat(slider.value));
+        sim.growthAlpha = alpha;
+        display.textContent = growthLabel(alpha);
+        if (net && net.connected) net.sendParams({ growthAlpha: alpha });
+      };
+      slider.addEventListener('input', update);
+      update();
+    }
+  }
   bindSlider('water-radius', 'water-radius-val', 'waterRadius');
   bindSlider('spray-psi', 'spray-psi-val', 'sprayPSI');
 
@@ -317,17 +342,22 @@ export function setupAdminPanel(sim, state, net) {
   updateGPMDisplay();
 
   function syncSliders(sim) {
-    const pairs = [
-      ['growth-alpha', 'growth-alpha-val', 'growthAlpha', growthLabel],
+    // Water radius and PSI are linear sliders — direct value mapping
+    const linearPairs = [
       ['water-radius', 'water-radius-val', 'waterRadius', null],
       ['spray-psi', 'spray-psi-val', 'sprayPSI', null],
     ];
-    for (const [sliderId, displayId, prop, format] of pairs) {
+    for (const [sliderId, displayId, prop, format] of linearPairs) {
       const slider = document.getElementById(sliderId);
       const display = document.getElementById(displayId);
       if (slider) slider.value = sim[prop];
       if (display) display.textContent = format ? format(sim[prop]) : sim[prop];
     }
+    // Growth alpha is logarithmic — convert α back to slider position
+    const growthSlider = document.getElementById('growth-alpha');
+    const growthDisplay = document.getElementById('growth-alpha-val');
+    if (growthSlider) growthSlider.value = alphaToSlider(sim.growthAlpha);
+    if (growthDisplay) growthDisplay.textContent = growthLabel(sim.growthAlpha);
     updateGPMDisplay();
   }
 
